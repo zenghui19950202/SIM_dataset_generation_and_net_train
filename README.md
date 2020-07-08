@@ -1,3 +1,9 @@
+# 依赖库dependency  
+
+>>Augmentor  
+>>torchsummary  
+>>pip install就可以了
+
 # SIM_dataset_generation_and_net_train
 
 ## 1.首先你得先自己下载一个高清图片的数据集，例如DIV2K中HR的图片。  
@@ -15,3 +21,4 @@
 >>>超参数的搜索范围可以在train_SIM_Unet.py里面进行配置。  
 >>>![image](https://github.com/zenghui19950202/SIM_dataset_generation_and_net_train/tree/master/images/parameter_grid.PNG)  
   
+
