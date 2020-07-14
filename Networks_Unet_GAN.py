@@ -491,15 +491,17 @@ class UnetSkipConnectionBlock(nn.Module):
                                         kernel_size=4, stride=2,
                                         padding=1, bias=use_bias)
             down = [downrelu, downconv]
-            up = [uprelu, upconv, upnorm]
+            # up = [uprelu, upconv, upnorm]
+            up = [uprelu, upconv]
             model = down + up
         else:
             upconv = nn.ConvTranspose2d(inner_nc * 2, outer_nc,
                                         kernel_size=4, stride=2,
                                         padding=1, bias=use_bias)
-            down = [downrelu, downconv, downnorm]
-            up = [uprelu, upconv, upnorm]
-
+            # down = [downrelu, downconv, downnorm]
+            # up = [uprelu, upconv, upnorm]
+            down = [downrelu, downconv]
+            up = [uprelu, upconv]
             if use_dropout:
                 model = down + [submodule] + up + [nn.Dropout(use_dropout)]
             else:
@@ -594,5 +596,5 @@ class PixelDiscriminator(nn.Module):
 
 if __name__ == '__main__':
     input_nc , output_nc ,num_downs = 17, 1, 6
-    SIM_Unet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=0.5)
+    SIM_Unet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
     summary(SIM_Unet, input_size=(17, 256, 256))

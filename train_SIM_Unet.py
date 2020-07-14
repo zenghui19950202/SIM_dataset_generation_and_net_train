@@ -120,6 +120,20 @@ def evaluate_valid_loss(data_iter,criterion, net, device=torch.device('cpu')):
             n += y.shape[0]
     return loss_sum.item() / n
 
+class SR_loss(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, SR_image, HR_LR_image,loss_ratio = 0.8):
+        if len(HR_LR_image.shape) == 4:
+            loss = (1 - loss_ratio) * torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, :, 0]), 2)) + loss_ratio * torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, :, 1]), 2))
+        elif len(HR_LR_image.shape) == 3:
+            loss = (1 - loss_ratio) * torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, 0]), 2)) + loss_ratio * torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, 1]), 2))
+        return loss
+
 
 if __name__ == '__main__':
     config = ConfigParser()
@@ -135,13 +149,13 @@ if __name__ == '__main__':
     # valid_directory_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/valid.txt"
     # train_directory_file = '/home/yyk/zenghui2020/multispot_SIM_dataset/train.txt'
     # valid_directory_file = "/home/yyk/zenghui2020/multispot_SIM_dataset/valid.txt"
-
     param_grid = {
-        'learning_rate': list(np.logspace(-4, -2, base=10, num=100)),
+        'learning_rate': list(np.logspace(-4, -2, base=10, num=20)),
         'batch_size': [ 2, 4, 8, 16],
-        'weight_decay': list(np.logspace(-2, 2, base=10, num=20)),
-        'Dropout_ratio':  [0.3,0.5,0.7]
+        'weight_decay': list(np.logspace(-2, 2, base=10, num=2)),
+        'Dropout_ratio':  [1]
     }
+
 
     SIM_train_dataset = SIM_data(train_directory_file)
     SIM_valid_dataset = SIM_data(valid_directory_file)
@@ -165,12 +179,13 @@ if __name__ == '__main__':
 
         device = try_gpu()
         criterion = nn.MSELoss()
+        criterion = SR_loss()
 
         SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size, shuffle=True)
         SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size, shuffle=True)
 
         input_nc, output_nc, num_downs = 17, 1, 5
-        SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=Dropout_ratio)
+        SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
         # SIMnet = UNet(17,1)
         SIMnet.apply(init_weights)
         start_time = time.time()
