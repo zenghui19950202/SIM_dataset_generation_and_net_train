@@ -15,6 +15,7 @@ import os
 from tensorboardX import SummaryWriter
 from Networks_Unet_GAN import UnetGenerator
 from early_stopping.pytorchtools import EarlyStopping
+import resnet_backbone_net as res_SIMnet
 
 # from visdom import Visdom
 
@@ -51,7 +52,7 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
 
     # optimizer = optim.Adam(net.parameters(), lr=lr,weight_decay=0)
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=10,
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10,
     verbose=False, threshold=0.00001, threshold_mode='rel', cooldown=0, min_lr=0, eps=1e-08)
 
 
@@ -65,6 +66,7 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
         train_acc_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
         for X, y in train_iter:
             optimizer.zero_grad()
+            # y = y[:,:,:,0]
             X, y = X.to(device), y.to(device)
             y_hat = net(X)
             y_hat = y_hat.squeeze()
@@ -73,7 +75,7 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
             loss.backward()
             optimizer.step()
             with torch.no_grad():
-                y = y.long()
+                y = y.float()
                 train_l_sum += loss.float()
                 n += y.shape[0]
         train_loss = train_l_sum / n
@@ -102,34 +104,61 @@ def evaluate_valid_loss(data_iter,criterion, net, device=torch.device('cpu')):
     loss_sum, n = torch.tensor([0], dtype=torch.float32, device=device), 0
     for X, y in data_iter:
         # Copy the data to device.
+        # y = y[:,:,:,0]
         X, y = X.to(device), y.to(device)
         with torch.no_grad():
-            y = y.long()
+            y = y.float()
             y_hat=net(X)
             y_hat = y_hat.squeeze()
             y = y.squeeze()
+            # loss_sum += criterion(y_hat, y)
             loss_sum += criterion(y_hat, y)
             n += y.shape[0]
     return loss_sum.item() / n
 
+class SR_loss(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, SR_image, HR_LR_image,loss_ratio = 0.8):
+        if len(HR_LR_image.shape) == 4:
+            loss = (1 - loss_ratio) * torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, :, 0]), 2)) + loss_ratio * torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, :, 0] + HR_LR_image[:, :, :, 1]), 2))
+        elif len(HR_LR_image.shape) == 3:
+            loss = (1 - loss_ratio) * torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, 0]), 2)) + loss_ratio * torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, 0] + HR_LR_image[:, :, 1]), 2))
+        return loss
+
+class MSE_loss(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, SR_image, HR_LR_image):
+        if len(HR_LR_image.shape) == 4:
+            loss = torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, :, 0]), 2))
+        elif len(HR_LR_image.shape) == 3:
+            loss = torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, 0]), 2))
+        return loss
 
 if __name__ == '__main__':
-    train_directory_file = 'D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/train.txt'
-    valid_directory_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/valid.txt"
-    # train_directory_file = '/home/zenghui19950202/SRdataset/BigDataSet/train.txt'
-    # valid_directory_file = "/home/zenghui19950202/SRdataset/BigDataSet/valid.txt"
+    # train_directory_file = 'D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/train.txt'
+    # valid_directory_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/valid.txt"
+    train_directory_file = '/home/zenghui19950202/SRdataset/BigDataSet/train.txt'
+    valid_directory_file = "/home/zenghui19950202/SRdataset/BigDataSet/valid.txt"
 
 
-    SIM_train_dataset = SIM_data(train_directory_file)
-    SIM_valid_dataset = SIM_data(valid_directory_file)
+    SIM_train_dataset = SIM_data(train_directory_file, data_mode = 'input_SIM_and_LR_images')
+    SIM_valid_dataset = SIM_data(valid_directory_file, data_mode = 'input_SIM_and_LR_images')
 
     num_epochs =2
 
     random_params = {
-        'learning_rate':  0.001072,
-        'batch_size': 1,
-        'Dropout_ratio': 0.5,
-        'weight_decay': 10
+        'learning_rate':  0.001,
+        'batch_size': 32,
+        'Dropout_ratio': 1,
+        'weight_decay': 1e-5
     }
     lr = random_params['learning_rate']
     batch_size = random_params['batch_size']
@@ -137,7 +166,9 @@ if __name__ == '__main__':
     Dropout_ratio = random_params['Dropout_ratio']
 
     device = try_gpu()
-    criterion = nn.MSELoss()
+    # criterion = nn.MSELoss()
+    # criterion = SR_loss()
+    criterion = MSE_loss()
 
     SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size, shuffle=True)
     SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size, shuffle=True)
@@ -150,7 +181,8 @@ if __name__ == '__main__':
 
     logfile_directory = file_directory+'/log_file'
     input_nc, output_nc, num_downs = 17, 1, 5
-    SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=Dropout_ratio)
+    # SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
+    SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], input_mode = 'only_input_SIM_images',LR_highway = False, pretrained=False, progress=False)
     # SIMnet = UNet(17,1)
     SIMnet.apply(init_weights)
     start_time = time.time()

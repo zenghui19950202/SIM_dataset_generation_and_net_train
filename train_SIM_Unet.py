@@ -11,6 +11,7 @@ import time
 from SpeckleSIMDataLoad import SIM_data
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import resnet_backbone_net as res_SIMnet
 # from Unet_NC2020 import UNet
 import os
 # from tensorboardX import SummaryWriter
@@ -38,7 +39,7 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
     # writer = SummaryWriter(logfile_directory)
     print('training on', device)
     # nn.DataParallel(net,device_ids=[0,1,2,3])
-    nn.DataParallel(net, device_ids=[0])
+    # nn.DataParallel(net, device_ids=[0])
     net = net.cuda()
     # optimizer = optim.SGD(net.parameters(), lr=lr)
     weight_p, bias_p = [], []
@@ -80,7 +81,7 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
                 loss.backward()
                 optimizer.step()
                 with torch.no_grad():
-                    y = y.long()
+                    y = y.float()
                     train_l_sum += loss.float()
                     n += y.shape[0]
             train_loss = train_l_sum / n
@@ -89,7 +90,6 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
             # print('epoch %d, loss %.4f,valid_loss %.4f, time %.1f sec' \
             #       % (epoch + 1, train_l_sum / n,valid_loss, time.time() - start))
             early_stopping(valid_loss,net,epoch)
-            epoch_tensor[0] = epoch + 1
             # writer.add_scalars('scalar/loss', {'train_loss': train_loss, 'valid_loss': valid_loss}, epoch + 1)
             if early_stopping.early_stop:
                 print("Early stopping")
@@ -127,11 +127,23 @@ class SR_loss(nn.Module):
         if len(HR_LR_image.shape) == 4:
             loss = (1 - loss_ratio) * torch.mean(
                 torch.pow((SR_image - HR_LR_image[:, :, :, 0]), 2)) + loss_ratio * torch.mean(
-                torch.pow((SR_image - HR_LR_image[:, :, :, 1]), 2))
+                torch.pow((SR_image - HR_LR_image[:, :, :, 0] + HR_LR_image[:, :, :, 1]), 2))
         elif len(HR_LR_image.shape) == 3:
             loss = (1 - loss_ratio) * torch.mean(
                 torch.pow((SR_image - HR_LR_image[:, :, 0]), 2)) + loss_ratio * torch.mean(
-                torch.pow((SR_image - HR_LR_image[:, :, 1]), 2))
+                torch.pow((SR_image - HR_LR_image[:, :, 0] + HR_LR_image[:, :, 1]), 2))
+        return loss
+
+class MSE_loss(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, SR_image, HR_LR_image):
+        if len(HR_LR_image.shape) == 4:
+            loss = torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, :, 0]), 2))
+        elif len(HR_LR_image.shape) == 3:
+            loss = torch.mean(
+                torch.pow((SR_image - HR_LR_image[:, :, 0]), 2))
         return loss
 
 
@@ -144,32 +156,32 @@ if __name__ == '__main__':
     valid_directory_file = os.path.dirname(SourceFileDirectory)+'/valid.txt'
 
     MAX_EVALS = config.getint('hyparameter', 'MAX_EVALS') # the number of hyparameters sets
+    MAX_EVALS = 2
 
     # train_directory_file = 'D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/train.txt'
     # valid_directory_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/valid.txt"
     # train_directory_file = '/home/yyk/zenghui2020/multispot_SIM_dataset/train.txt'
     # valid_directory_file = "/home/yyk/zenghui2020/multispot_SIM_dataset/valid.txt"
     param_grid = {
-        'learning_rate': list(np.logspace(-4, -2, base=10, num=20)),
-        'batch_size': [ 2, 4, 8, 16],
-        'weight_decay': list(np.logspace(-2, 2, base=10, num=2)),
+        'learning_rate': list(np.logspace(-4, -2, base=10, num=10)),
+        'batch_size': [8, 16, 32],
+        'weight_decay': [1e-5],
         'Dropout_ratio':  [1]
     }
-
 
     SIM_train_dataset = SIM_data(train_directory_file)
     SIM_valid_dataset = SIM_data(valid_directory_file)
 
     random.seed(70)  # 设置随机种子
     min_loss=1e5
-    num_epochs =200
+    num_epochs =2
 
     directory_path = os.getcwd()
     file_directory = directory_path + '/' + 'random_hyparameters'+ time.strftime("%Y_%m_%d %H_%M_%S", time.localtime())
     if not os.path.exists(file_directory):
         os.makedirs(file_directory)
     f_hyparameters = open(file_directory + "/hyperparams.txt", 'w')
-    for i in range(MAX_EVALS):
+    for i in range(2):
 
         random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
         lr = random_params['learning_rate']
@@ -178,14 +190,15 @@ if __name__ == '__main__':
         Dropout_ratio = random_params['Dropout_ratio']
 
         device = try_gpu()
-        criterion = nn.MSELoss()
-        criterion = SR_loss()
+        # criterion = nn.MSELoss()
+        criterion = MSE_loss()
 
         SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size, shuffle=True)
         SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size, shuffle=True)
 
         input_nc, output_nc, num_downs = 17, 1, 5
-        SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
+        # SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
+        SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], pretrained=False, progress=False, LR_highway=True)
         # SIMnet = UNet(17,1)
         SIMnet.apply(init_weights)
         start_time = time.time()

@@ -130,14 +130,13 @@ class Bottleneck(nn.Module):
 class ResNet(nn.Module):
 
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
-                 groups=1, width_per_group=64, input_mode = 'only_input_SIM_images',replace_stride_with_dilation=None,
-                 norm_layer=None, LR_highway = True):
+                 groups=1, width_per_group=64, replace_stride_with_dilation=None,
+                 norm_layer=None):
         super(ResNet, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
-        self.LR_highway = LR_highway
-        self.input_mode = input_mode
+
         self.inplanes = 64
         self.dilation = 1
         if replace_stride_with_dilation is None:
@@ -149,12 +148,8 @@ class ResNet(nn.Module):
                              "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
         self.groups = groups
         self.base_width = width_per_group
-        if self.input_mode == 'only_input_SIM_images':
-            self.conv1 = nn.Conv2d(16, self.inplanes, kernel_size=7, stride=1, padding=3,
-                                   bias=False)
-        else:
-            self.conv1 = nn.Conv2d(17, self.inplanes, kernel_size=7, stride=1, padding=3,
-                                   bias=False)
+        self.conv1 = nn.Conv2d(17, self.inplanes, kernel_size=7, stride=1,padding=3,
+                               bias=False)
         self.relu = nn.ReLU(inplace=True)
         self.layer1 = self._make_layer(block, 128, layers[0])
         self.layer2 = self._make_layer(block, 64, layers[1], stride=1,
@@ -164,7 +159,6 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 16, layers[3], stride=1,
                                        dilate=replace_stride_with_dilation[2])
         self.final_conv = conv1x1(self.inplanes,1)
-        self.LR_highway_conv = conv1x1(2,1)
         self.Tanh = nn.Tanh()
 
 
@@ -216,11 +210,9 @@ class ResNet(nn.Module):
 
     def _forward_impl(self, x):
         # See note [TorchScript super()]
-        if self.input_mode == 'only_input_SIM_images':
-            input = x[:, 0:16, :, :]
-        else:
-            input = x
-        out = self.conv1(input)
+        input = x
+
+        out = self.conv1(x)
         out = self.relu(out)
 
         out = self.layer1(out)
@@ -228,15 +220,8 @@ class ResNet(nn.Module):
         out = self.layer3(out)
         out = self.layer4(out)
         out = self.final_conv(out)
-        if self.LR_highway:
-            size_of_image = x.shape
-            out = self.relu(out)
-            LR_image = torch.zeros(size_of_image[0],1,size_of_image[2],size_of_image[3])
-            LR_image[:,:,:,:] = x[:, 16, :, :]
-            out = torch.cat((out,LR_image),1)
-            out = self.LR_highway_conv(out)
-            # out = self.Tanh(out + x[:, 16, :, :])
-        out = self.Tanh(out)
+        out = out.squeeze()
+        out = self.Tanh(out + input[:,16,:,:])
         # x = nn.Tanh(x)
 
         return out
@@ -245,8 +230,8 @@ class ResNet(nn.Module):
         return self._forward_impl(x)
 
 
-def _resnet(arch, block, layers, pretrained, progress, input_mode = 'only_input_SIM_images', LR_highway=True, **kwargs,):
-    model = ResNet(block, layers, **kwargs,LR_highway=LR_highway, input_mode = input_mode)
+def _resnet(arch, block, layers, pretrained, progress, **kwargs):
+    model = ResNet(block, layers, **kwargs)
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)
@@ -289,5 +274,5 @@ def resnet50(pretrained=False, progress=True, **kwargs):
                    **kwargs)
 
 if __name__ == '__main__':
-    SIMnet = _resnet('resnet34', BasicBlock, [1, 1, 1, 1],input_mode = 'only_input_SIM_images',LR_highway=True, pretrained=False, progress=False)
+    SIMnet = _resnet('resnet34', BasicBlock, [1, 1, 1, 1], pretrained=False, progress=False)
     summary(SIMnet, input_size=(17, 256, 256))
