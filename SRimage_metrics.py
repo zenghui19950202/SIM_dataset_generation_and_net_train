@@ -82,12 +82,10 @@ def calculate_psnr(img1, img2):
     # img1 and img2 have range [0, 255]
     img1 = (img1 * 0.5 + 0.5)
     img2 = (img2 * 0.5 + 0.5)
-    img1 = img1/img1.max() * 255
-    img2 = img2 / img2.max() * 255
     mse = torch.mean((img1 - img2)**2)
     if mse == 0:
         return float('inf')
-    return 20 * math.log10(255.0 / math.sqrt(mse))
+    return 20 * math.log10(img2.max() / math.sqrt(mse))
 
 
 def ssim(img1, img2):

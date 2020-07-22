@@ -16,6 +16,7 @@ from tensorboardX import SummaryWriter
 from Networks_Unet_GAN import UnetGenerator
 from early_stopping.pytorchtools import EarlyStopping
 import resnet_backbone_net as res_SIMnet
+import math
 
 # from visdom import Visdom
 
@@ -52,7 +53,7 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
 
     # optimizer = optim.Adam(net.parameters(), lr=lr,weight_decay=0)
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10,
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=10,
     verbose=False, threshold=0.00001, threshold_mode='rel', cooldown=0, min_lr=0, eps=1e-08)
 
 
@@ -71,18 +72,18 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
             y_hat = net(X)
             y_hat = y_hat.squeeze()
             y = y.squeeze()
-            loss = criterion(y_hat, y)
+            loss,_ = criterion(y_hat, y)
             loss.backward()
             optimizer.step()
             with torch.no_grad():
                 y = y.float()
                 train_l_sum += loss.float()
-                n += y.shape[0]
+                n += 1
         train_loss = train_l_sum / n
-        valid_loss = evaluate_valid_loss(test_iter,criterion, net, device)
+        valid_loss, PSNR = evaluate_valid_loss(test_iter,criterion, net, device)
         scheduler.step(valid_loss)
-        print('epoch %d, train_loss %f,valid_loss %f, time %.1f sec' \
-              % (epoch + 1, train_loss,valid_loss, time.time() - start))
+        print('epoch %d, train_loss %f,valid_loss %f, PSNR: %f, time %.1f sec' \
+              % (epoch + 1, train_loss,valid_loss,PSNR, time.time() - start))
         early_stopping(valid_loss,net,epoch)
         writer.add_scalars('scalar/loss', {'train_loss': train_loss, 'valid_loss': valid_loss}, epoch + 1)
         if early_stopping.early_stop:
@@ -101,7 +102,7 @@ def init_weights(m):
 def evaluate_valid_loss(data_iter,criterion, net, device=torch.device('cpu')):
     net.eval()
     """Evaluate accuracy of a model on the given data set."""
-    loss_sum, n = torch.tensor([0], dtype=torch.float32, device=device), 0
+    loss_sum, PSNR_sum, n = torch.tensor([0], dtype=torch.float32, device=device),torch.tensor([0], dtype=torch.float32, device=device), 0
     for X, y in data_iter:
         # Copy the data to device.
         # y = y[:,:,:,0]
@@ -112,9 +113,11 @@ def evaluate_valid_loss(data_iter,criterion, net, device=torch.device('cpu')):
             y_hat = y_hat.squeeze()
             y = y.squeeze()
             # loss_sum += criterion(y_hat, y)
-            loss_sum += criterion(y_hat, y)
-            n += y.shape[0]
-    return loss_sum.item() / n
+            loss , PSNR = criterion(y_hat, y)
+            loss_sum += loss
+            PSNR_sum += PSNR
+            n += 1
+    return loss_sum.item() / n, PSNR_sum.item()/n
 
 class SR_loss(nn.Module):
     def __init__(self):
@@ -135,12 +138,16 @@ class MSE_loss(nn.Module):
         super().__init__()
     def forward(self, SR_image, HR_LR_image):
         if len(HR_LR_image.shape) == 4:
+            HR = HR_LR_image[:, :, :, 0]
             loss = torch.mean(
-                torch.pow((SR_image - HR_LR_image[:, :, :, 0]), 2))
+                torch.pow((SR_image -HR), 2))
         elif len(HR_LR_image.shape) == 3:
+            HR = HR_LR_image[:, :, 0]
             loss = torch.mean(
-                torch.pow((SR_image - HR_LR_image[:, :, 0]), 2))
-        return loss
+                torch.pow((SR_image - HR), 2))
+
+        PSNR = 20 * math.log10(HR.max() / math.sqrt(loss))
+        return loss,PSNR
 
 if __name__ == '__main__':
     # train_directory_file = 'D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/train.txt'
@@ -149,10 +156,10 @@ if __name__ == '__main__':
     valid_directory_file = "/home/zenghui19950202/SRdataset/BigDataSet/valid.txt"
 
 
-    SIM_train_dataset = SIM_data(train_directory_file, data_mode = 'input_SIM_and_LR_images')
-    SIM_valid_dataset = SIM_data(valid_directory_file, data_mode = 'input_SIM_and_LR_images')
+    SIM_train_dataset = SIM_data(train_directory_file, data_mode = 'input_SIM_and_sum_images')
+    SIM_valid_dataset = SIM_data(valid_directory_file, data_mode = 'input_SIM_and_sum_images')
 
-    num_epochs =2
+    num_epochs =303
 
     random_params = {
         'learning_rate':  0.001,
@@ -180,9 +187,9 @@ if __name__ == '__main__':
         os.makedirs(file_directory)
 
     logfile_directory = file_directory+'/log_file'
-    input_nc, output_nc, num_downs = 17, 1, 5
+    # input_nc, output_nc, num_downs = 17, 1, 5
     # SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
-    SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], input_mode = 'only_input_SIM_images',LR_highway = False, pretrained=False, progress=False)
+    SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], input_mode = 'input_SIM_and_sum_images',LR_highway = False, pretrained=False, progress=False)
     # SIMnet = UNet(17,1)
     SIMnet.apply(init_weights)
     start_time = time.time()
