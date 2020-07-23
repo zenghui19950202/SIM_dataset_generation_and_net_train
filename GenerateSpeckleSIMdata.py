@@ -9,7 +9,6 @@ from torchvision import transforms
 from fuctions_for_generate_pattern import SinusoidalPattern
 from Augmentor.Operations import Crop
 from configparser import ConfigParser
-
 import random
 
 
@@ -74,9 +73,13 @@ class SpecklePattern(SinusoidalPattern):
         sample_rate = 4 # sample four points in one psf wide which is fullfilled the sampling theorem
         scan_step = math.ceil(spot_spacing/sample_rate)
         speckle_SIM_data_stack=[]
+        initial_i = random.randint(0,3)
+        initial_j = random.randint(0,3)
         for i in range(sample_rate):
             for j in range(sample_rate):
-                multi_spot_pattern_crop = multi_spot_pattern[i*scan_step:i*scan_step+self.image_size,j*scan_step:j*scan_step+self.image_size]
+                a = (i + initial_i) % sample_rate
+                b = (j + initial_j) % sample_rate
+                multi_spot_pattern_crop = multi_spot_pattern[a*scan_step:a*scan_step+self.image_size,b*scan_step:b*scan_step+self.image_size]
                 speckle_SIM_data = self.add_gaussian_noise(self.OTF_Filter(multi_spot_pattern_crop * TensorImage, self.OTF))
                 speckle_SIM_data_normalized = speckle_SIM_data/ speckle_SIM_data.max()
 
