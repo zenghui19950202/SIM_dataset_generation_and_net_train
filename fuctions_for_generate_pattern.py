@@ -11,6 +11,7 @@ from Augmentor import Operations
 from torchvision import transforms
 from PIL import Image
 import os
+import random
 
 
 # def AddSinusoidalPattern(pipeline, probability=1):
@@ -31,7 +32,7 @@ class SinusoidalPattern(Operations.Operation):
     """
     This class is used to add Sinusoidal Pattern on images.
     """
-    def __init__(self,probability, NumPhase=3, Magnification=150, PixelSizeOfCCD=6800, EmWaveLength=635, NA=0.9, SNR=3000,
+    def __init__(self,probability, NumPhase=3, Magnification=150, PixelSizeOfCCD=6800, EmWaveLength=635, NA=0.9, SNR=10000,
                  image_size=256, pattern_frequency_ratio = 0.8):  # unit: nm
         """
         As well as the always required :attr:`probability` parameter, the
@@ -78,11 +79,13 @@ class SinusoidalPattern(Operations.Operation):
             img_pad = transforms.Pad(padding=(0, 0, pad_w, pad_h), fill=0, padding_mode='constant')(image)
             center_crop = transforms.CenterCrop(size=(crop_size, crop_size))
             imag_pad_crop = center_crop(img_pad)
+            image_gray = imag_pad_crop.convert('L')
+            TensorImage = transforms.ToTensor()(image_gray)
 
             # augmented_images += self.LR_image_generator(imag_pad_crop)
-            augmented_images += self.SR_image_generator(imag_pad_crop)
-            augmented_images += self.LR_image_generator(imag_pad_crop)
-            augmented_images += self.SinusoidalPattern(imag_pad_crop)
+            augmented_images += self.SR_image_generator(TensorImage)
+            augmented_images += self.LR_image_generator(TensorImage)
+            augmented_images += self.SinusoidalPattern(TensorImage)
             # print('hello')
 
         return augmented_images
@@ -96,19 +99,21 @@ class SinusoidalPattern(Operations.Operation):
         resolution = 0.61 * self.EmWaveLength / self.NA
         # xx, yy, _, _ = self.GridGenerate(image=torch.rand(7, 7))
         # xx, yy, fx, fy = self.GridGenerate(image)
-        TensorImage = transforms.ToTensor()(image)
         SinPatternPIL_Image = []
+        random_initial_direction_phase = random.random() * 2 * math.pi
         for i in range(3):
-            theta = i * 2 / 3 * math.pi + math.pi / 2
+            theta = i * 2 / 3 * math.pi + random_initial_direction_phase
             SpatialFrequencyX = -self.pattern_frequency_ratio * 1 / resolution * math.sin(theta)  # 0.8倍的极限频率条纹 pattern_frequency_ratio，可调
             SpatialFrequencyY = -self.pattern_frequency_ratio * 1 / resolution * math.cos(theta)
+            random_initial_phase = random.random() * 2 * math.pi
             for j in range(self.NumPhase):
-                phase = j * 2 / self.NumPhase * math.pi
+                phase = j * 2 / self.NumPhase * math.pi + random_initial_phase
                 SinPattern = (torch.cos(
                     phase + 2 * math.pi * (SpatialFrequencyX * self.xx + SpatialFrequencyY * self.yy)) + 1) / 2
-                SinPattern_OTF_filter = self.OTF_Filter(SinPattern * TensorImage,self.OTF)
+                SinPattern_OTF_filter = self.OTF_Filter(SinPattern * image,self.OTF)
                 SinPattern_OTF_filter_gaussian_noise = self.add_gaussian_noise(SinPattern_OTF_filter)
-                SinPatternPIL_Image.append(SinPattern_OTF_filter_gaussian_noise)
+                SinPattern_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(SinPattern_OTF_filter_gaussian_noise).convert('RGB')
+                SinPatternPIL_Image.append(SinPattern_OTF_filter_gaussian_noise_PIL)
 
         return SinPatternPIL_Image
 
@@ -178,11 +183,12 @@ class SinusoidalPattern(Operations.Operation):
     def add_gaussian_noise(self, tensor_Image):  # The type of input image is PIL
         # if len(TensorImage)==3:
         #      TensorImage = TensorImage.permute(1, 2, 0) # transope for matplot
-        signal_intensity_of_image = (tensor_Image ** 2).mean()  # The mean intensity of signal
-        noise_intensity_of_image = signal_intensity_of_image / self.SNR
+        # signal_intensity_of_image = (tensor_Image ** 2).mean()  # The mean intensity of signal
+        signal_std_of_image = (tensor_Image ** 2).std() # The std intensity of signal
+        noise_std_of_image = signal_std_of_image / self.SNR
         noise_of_image = torch.zeros_like(tensor_Image)
-        std_of_noise = noise_intensity_of_image ** (0.5)
-        noise_of_image.normal_(mean=0, std=std_of_noise)
+        # std_of_noise = noise_std_of_image ** (0.5)
+        noise_of_image.normal_(mean=0, std=noise_std_of_image)
         image_with_noise = tensor_Image + noise_of_image
         image_with_noise = torch.where(image_with_noise < 0, torch.zeros_like(image_with_noise), image_with_noise)
         image_with_noise_normalized = image_with_noise / image_with_noise.max()
@@ -192,9 +198,10 @@ class SinusoidalPattern(Operations.Operation):
     def SR_image_generator(self, TensorImage):
 
         OTF = self.OTF_form(fc_ratio=1.9)
-        SR_image_tensor= self.add_gaussian_noise(self.OTF_Filter(TensorImage,OTF))
-        SR_image_tensor = SR_image_tensor.float()
-        SR_image_PIL = transforms.ToPILImage()(SR_image_tensor).convert('RGB')
+        SR_image_tensor= self.OTF_Filter(TensorImage,OTF)
+        SR_image_tensor_normalized = SR_image_tensor / SR_image_tensor.max()
+        SR_image_tensor_normalized = SR_image_tensor_normalized.float()
+        SR_image_PIL = transforms.ToPILImage()(SR_image_tensor_normalized).convert('RGB')
         return [SR_image_PIL]
 
     def LR_image_generator(self, TensorImage):

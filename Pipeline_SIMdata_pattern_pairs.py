@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# author：zenghui time:2020/6/11
+# author：zenghui time:2020/9/3
 import Augmentor
 from Augmentor.Pipeline import Pipeline
 from PIL import Image
@@ -15,17 +15,17 @@ import numpy as np
 import math
 
 
-class Pipeline_speckle(Pipeline):
+class Pipeline_SIMdata_pattern_pairs(Pipeline):
 
     def __init__(self, source_directory=None, output_directory="output", save_format=None):
-       super(Pipeline_speckle,self).__init__(source_directory=source_directory, output_directory=output_directory, save_format=save_format)
+       super(Pipeline_SIMdata_pattern_pairs,self).__init__(source_directory=source_directory, output_directory=output_directory, save_format=save_format)
        self.source_directory=source_directory
 
        self.train_txt_directory = os.path.dirname(self.source_directory) + '/train.txt'
        self.valid_txt_directory = os.path.dirname(self.source_directory) + '/valid.txt'
 
 
-    def sample(self, n, multi_threaded=True,data_type = 'train',data_num = 16):
+    def sample(self, n, multi_threaded=True,data_ratio=0.8):
         """
         Generate :attr:`n` number of samples from the current pipeline.
 
@@ -47,8 +47,7 @@ class Pipeline_speckle(Pipeline):
         :return: None
         """
         augmentor_images = list(range(n))
-        self.data_num = data_num
-        self.data_type = data_type
+        self.data_ratio = data_ratio
         if len(self.augmentor_images) == 0:
             raise IndexError("There are no images in the pipeline. "
                              "Add a directory using add_directory(), "
@@ -63,13 +62,14 @@ class Pipeline_speckle(Pipeline):
             for i in range(n):
                 augmentor_images[i] = copy.deepcopy(random.choice(self.augmentor_images))
 
+        train_image_num = round(data_ratio* n)
         image_num = 0
         for augmentor_image in augmentor_images:
             image_name = os.path.basename(augmentor_image.image_path).split('.')[0]
             image_format = os.path.basename(augmentor_image.image_path).split('.')[1]
             UUID=uuid.uuid4()
             image_name = image_name+'-'+str(UUID)
-            if self.data_type == 'train':
+            if image_num<round(train_image_num):
                 txt_directory=self.train_txt_directory
                 save_directory = os.path.join(augmentor_image.output_directory, image_name)
             else:
@@ -77,7 +77,7 @@ class Pipeline_speckle(Pipeline):
                 save_directory = os.path.join(augmentor_image.output_directory, image_name)
             f = open(txt_directory,'a')
             augmentor_image.new_name = image_name
-            f.write(save_directory  + '\t' + str(self.data_num) + '\t' + image_format + '\n')
+            f.write(save_directory  + '\t' + image_format + '\n')
             f.close()
             image_num=image_num+1
 
@@ -160,7 +160,7 @@ class Pipeline_speckle(Pipeline):
                         temp_images = operation.perform_operation(images)
                         tensor_temp_images = transforms.ToTensor()(temp_images[0].convert('L'))
                         entropy = self.get_entropy(tensor_temp_images.squeeze())
-                        if entropy > 5.5:
+                        if entropy > 7:
                             Crop_image_is_background = False
                             images = temp_images
                 else:
@@ -175,20 +175,13 @@ class Pipeline_speckle(Pipeline):
                 for i in range(len(images)):
                     if i == 0:
                         save_name =  file_name\
-                                    +"_SR_"\
+                                    +"_SIMdata_"\
                                     +'.' + image_format
-                        images[i].save(os.path.join(augmentor_image.output_directory, save_name))
-                    elif i == 1:
-                        save_name = file_name\
-                                    +"_LR_"\
-                                    +'.'+ image_format
                         images[i].save(os.path.join(augmentor_image.output_directory, save_name))
                     else:
                         save_name = file_name\
-                                    +"_Speckle_SIM_data(" \
-                                    +str(i - 1) \
-                                    +")_" \
-                                    +'.' + image_format
+                                    +"_pattern_"\
+                                    +'.'+ image_format
                         images[i].save(os.path.join(augmentor_image.output_directory, save_name))
 
             except IOError as e:

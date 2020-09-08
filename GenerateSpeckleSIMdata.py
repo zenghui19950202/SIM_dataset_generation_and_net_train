@@ -79,7 +79,9 @@ class SpecklePattern(SinusoidalPattern):
             for j in range(sample_rate):
                 a = (i + initial_i) % sample_rate
                 b = (j + initial_j) % sample_rate
-                multi_spot_pattern_crop = multi_spot_pattern[a*scan_step:a*scan_step+self.image_size,b*scan_step:b*scan_step+self.image_size]
+                multi_spot_pattern_crop = multi_spot_pattern[
+                                          a * scan_step + spot_spacing:a * scan_step + spot_spacing + self.image_size,
+                                          b * scan_step + spot_spacing:b * scan_step + spot_spacing + self.image_size]
                 speckle_SIM_data = self.add_gaussian_noise(self.OTF_Filter(multi_spot_pattern_crop * TensorImage, self.OTF))
                 speckle_SIM_data_normalized = speckle_SIM_data/ speckle_SIM_data.max()
 
@@ -100,12 +102,24 @@ if __name__ == '__main__':
     config.sections()
     SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
     sample_num = config.getint('SIM_data_generation', 'sample_num')
+    image_size = config.getint('SIM_data_generation', 'image_size')
     data_ratio = config.getfloat('SIM_data_generation', 'data_ratio')
     # SourceFileDirectory = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/test2"
 
+    # p = Pipeline_speckle.Pipeline_speckle(source_directory=SourceFileDirectory)
+    # p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
+    # p.add_operation(SpecklePattern(probability=1,image_size=image_size))
+    # p.sample(20,multi_threaded=True,data_ratio=1)
 
+    train_directory = SourceFileDirectory + '/train'
+    valid_directory = SourceFileDirectory + '/valid'
 
-    p = Pipeline_speckle.Pipeline_speckle(source_directory=SourceFileDirectory)
-    p.add_operation(Crop(probability=1, width = 256, height = 256, centre = False))
-    p.add_operation(SpecklePattern(probability=1))
-    p.sample(sample_num,multi_threaded=True,data_ratio=data_ratio)
+    p = Pipeline_speckle.Pipeline_speckle(source_directory=train_directory,output_directory="train")
+    p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
+    p.add_operation(SpecklePattern(probability=1,image_size=image_size))
+    p.sample(3200,multi_threaded=True,data_type='train_data',data_num = 16)
+
+    p = Pipeline_speckle.Pipeline_speckle(source_directory=valid_directory,output_directory="valid")
+    p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
+    p.add_operation(SpecklePattern(probability=1,image_size=image_size))
+    p.sample(400,multi_threaded=True,data_type='valid_data',data_num = 16)

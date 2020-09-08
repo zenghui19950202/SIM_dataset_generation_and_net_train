@@ -152,14 +152,13 @@ class MSE_loss(nn.Module):
 if __name__ == '__main__':
     # train_directory_file = 'D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/train.txt'
     # valid_directory_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/valid.txt"
-    train_directory_file = '/home/zenghui19950202/SRdataset/BigDataSet/train.txt'
-    valid_directory_file = "/home/zenghui19950202/SRdataset/BigDataSet/valid.txt"
-
+    train_directory_file = '/content/drive/My Drive/train.txt'
+    valid_directory_file = "/content/drive/My Drive/valid.txt"
 
     SIM_train_dataset = SIM_data(train_directory_file, data_mode = 'input_SIM_and_sum_images')
     SIM_valid_dataset = SIM_data(valid_directory_file, data_mode = 'input_SIM_and_sum_images')
 
-    num_epochs =303
+    num_epochs =50
 
     random_params = {
         'learning_rate':  0.001,
@@ -187,9 +186,9 @@ if __name__ == '__main__':
         os.makedirs(file_directory)
 
     logfile_directory = file_directory+'/log_file'
-    # input_nc, output_nc, num_downs = 17, 1, 5
-    # SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
-    SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], input_mode = 'input_SIM_and_sum_images',LR_highway = False, pretrained=False, progress=False)
+    input_nc, output_nc, num_downs = 17, 1, 5
+    SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
+    # SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], input_mode = 'input_SIM_and_sum_images',LR_highway = False, pretrained=False, progress=False)
     # SIMnet = UNet(17,1)
     SIMnet.apply(init_weights)
     start_time = time.time()

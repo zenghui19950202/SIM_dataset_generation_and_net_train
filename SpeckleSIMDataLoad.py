@@ -86,7 +86,11 @@ class SIM_data(data.Dataset):
 
 if __name__ == '__main__':
     directory_json_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown\\test\directories_of_images.json"
-    directory_txt_file = 'D:\DataSet\DIV2K\DIV2K_valid_LR_unknown\\test/valid.txt'
+    directory_txt_file = 'D:\DataSet\DIV2K\DIV2K/train.txt'
     SIM_dataset=SIM_data(directory_txt_file)
     a,b = SIM_dataset[0]
+    a = a * 0.5 + 0.5
+    a_PIL = transforms.ToPILImage()(a[0,:,:]).convert('RGB')
+    b = b * 0.5 + 0.5
+    b_PIL = transforms.ToPILImage()(b[:,:,0]).convert('RGB')
     SIM_data_loader= DataLoader(SIM_dataset, batch_size=4,shuffle=True)
