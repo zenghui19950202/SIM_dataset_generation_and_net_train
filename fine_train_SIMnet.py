@@ -17,6 +17,7 @@ from Networks_Unet_GAN import UnetGenerator
 from early_stopping.pytorchtools import EarlyStopping
 import resnet_backbone_net as res_SIMnet
 import math
+from configparser import ConfigParser
 
 # from visdom import Visdom
 
@@ -150,15 +151,19 @@ class MSE_loss(nn.Module):
         return loss,PSNR
 
 if __name__ == '__main__':
-    # train_directory_file = 'D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/train.txt'
-    # valid_directory_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/valid.txt"
-    train_directory_file = '/content/drive/My Drive/train.txt'
-    valid_directory_file = "/content/drive/My Drive/valid.txt"
+    config = ConfigParser()
+    config.read('configuration.ini')
+    SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
+
+    train_directory_file = SourceFileDirectory + '/train.txt'
+    valid_directory_file = SourceFileDirectory + '/valid.txt'
+
+    MAX_EVALS = config.getint('hyparameter', 'MAX_EVALS')  # the number of hyparameters sets
 
     SIM_train_dataset = SIM_data(train_directory_file, data_mode = 'input_SIM_and_sum_images')
     SIM_valid_dataset = SIM_data(valid_directory_file, data_mode = 'input_SIM_and_sum_images')
 
-    num_epochs =50
+    num_epochs =2
 
     random_params = {
         'learning_rate':  0.001,
@@ -186,7 +191,7 @@ if __name__ == '__main__':
         os.makedirs(file_directory)
 
     logfile_directory = file_directory+'/log_file'
-    input_nc, output_nc, num_downs = 17, 1, 5
+    input_nc, output_nc, num_downs = 10, 1, 5
     SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
     # SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], input_mode = 'input_SIM_and_sum_images',LR_highway = False, pretrained=False, progress=False)
     # SIMnet = UNet(17,1)

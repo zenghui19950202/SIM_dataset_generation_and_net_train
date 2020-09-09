@@ -112,6 +112,7 @@ class SinusoidalPattern(Operations.Operation):
                     phase + 2 * math.pi * (SpatialFrequencyX * self.xx + SpatialFrequencyY * self.yy)) + 1) / 2
                 SinPattern_OTF_filter = self.OTF_Filter(SinPattern * image,self.OTF)
                 SinPattern_OTF_filter_gaussian_noise = self.add_gaussian_noise(SinPattern_OTF_filter)
+                SinPattern_OTF_filter_gaussian_noise = SinPattern_OTF_filter_gaussian_noise.float()
                 SinPattern_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(SinPattern_OTF_filter_gaussian_noise).convert('RGB')
                 SinPatternPIL_Image.append(SinPattern_OTF_filter_gaussian_noise_PIL)
 

@@ -412,7 +412,7 @@ class ResnetBlock(nn.Module):
 class UnetGenerator(nn.Module):
     """Create a Unet-based generator"""
 
-    def __init__(self, input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, LR_highway = None, use_dropout=False):
+    def __init__(self, input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, LR_highway = None, use_dropout=False,input_mode = 'only_input_SIM_images',):
         """Construct a Unet generator
         Parameters:
             input_nc (int)  -- the number of channels in input images
@@ -437,9 +437,15 @@ class UnetGenerator(nn.Module):
         unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 4, input_nc=None, submodule=unet_block,
                                              norm_layer=norm_layer)
         unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
-        self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True,
-                                             norm_layer=norm_layer,LR_highway = LR_highway)  # add the outermost layer
 
+        if input_mode == 'only_input_SIM_images':
+            self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True,
+                                                 norm_layer=norm_layer,LR_highway = LR_highway,input_mode = input_mode)  # add the outermost layer
+        else:
+            self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc+1, submodule=unet_block,
+                                                 outermost=True,
+                                                 norm_layer=norm_layer,
+                                                 LR_highway=LR_highway ,input_mode = input_mode)  # add the outermost layer
     def forward(self, input):
         """Standard forward"""
         return self.model(input)
@@ -452,7 +458,7 @@ class UnetSkipConnectionBlock(nn.Module):
     """
 
     def __init__(self, outer_nc, inner_nc, input_nc=None,
-                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, LR_highway = None, use_dropout=False):
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, LR_highway = None, use_dropout=False,input_mode = 'only_input_SIM_images'):
         """Construct a Unet submodule with skip connections.
         Parameters:
             outer_nc (int) -- the number of filters in the outer conv layer
@@ -467,6 +473,7 @@ class UnetSkipConnectionBlock(nn.Module):
         super(UnetSkipConnectionBlock, self).__init__()
         self.LR_highway = LR_highway
         self.outermost = outermost
+        self.input_mode = input_mode
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
@@ -512,17 +519,30 @@ class UnetSkipConnectionBlock(nn.Module):
 
     def forward(self, x):
         if self.outermost:
-            if self.LR_highway == 'add':
-                return self.model(x) + x[:,-1,:,:]
-            elif self.LR_highway == 'concat':
-                model_out = self.model(x)
-                concat_data = torch.cat([model_out, x[:,-1,:,:].view(model_out.size())], 1)
-                conv1x1 = torch.nn.Conv2d(2, 1, kernel_size=1, stride=1, bias=False)
-                Tanh = torch.nn.Tanh()
-                out = Tanh(conv1x1(concat_data))
-                return out
+            if self.input_mode == 'only_input_SIM_images':
+                if self.LR_highway == 'add':
+                    return self.model(x[:,0:-1,:,:]) + x[:,-1,:,:]
+                elif self.LR_highway == 'concat':
+                    model_out = self.model(x[:,0:-1,:,:])
+                    concat_data = torch.cat([model_out, x[:,-1,:,:].view(model_out.size())], 1)
+                    conv1x1 = torch.nn.Conv2d(2, 1, kernel_size=1, stride=1, bias=False)
+                    Tanh = torch.nn.Tanh()
+                    out = Tanh(conv1x1(concat_data))
+                    return out
+                else:
+                    return self.model(x[:,0:-1,:,:])
             else:
-                return self.model(x)
+                if self.LR_highway == 'add':
+                    return self.model(x) + x[:,-1,:,:]
+                elif self.LR_highway == 'concat':
+                    model_out = self.model(x)
+                    concat_data = torch.cat([model_out, x[:,-1,:,:].view(model_out.size())], 1)
+                    conv1x1 = torch.nn.Conv2d(2, 1, kernel_size=1, stride=1, bias=False)
+                    Tanh = torch.nn.Tanh()
+                    out = Tanh(conv1x1(concat_data))
+                    return out
+                else:
+                    return self.model(x)
         else:  # add skip connections
             return torch.cat([x, self.model(x)], 1)
 
@@ -606,6 +626,6 @@ class PixelDiscriminator(nn.Module):
         return self.net(input)
 
 if __name__ == '__main__':
-    input_nc , output_nc ,num_downs = 17, 1, 6
-    SIM_Unet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, LR_highway = None,use_dropout=False)
-    summary(SIM_Unet, input_size=(17, 256, 256))
+    input_nc , output_nc ,num_downs = 9, 1, 6
+    SIM_Unet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d,input_mode = 'only_input_SIM_images',LR_highway = 'cat',use_dropout=False)
+    summary(SIM_Unet, input_size=(10, 256, 256))

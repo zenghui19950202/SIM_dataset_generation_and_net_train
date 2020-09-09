@@ -131,7 +131,7 @@ class ResNet(nn.Module):
 
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
                  groups=1, width_per_group=64, input_mode = 'only_input_SIM_images',replace_stride_with_dilation=None,
-                 norm_layer=None, LR_highway = True):
+                 norm_layer=None, LR_highway = True,input_nc = 10):
         super(ResNet, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
@@ -140,6 +140,7 @@ class ResNet(nn.Module):
         self.input_mode = input_mode
         self.inplanes = 64
         self.dilation = 1
+        self.input_nc = input_nc
         if replace_stride_with_dilation is None:
             # each element in the tuple indicates if we should replace
             # the 2x2 stride with a dilated convolution instead
@@ -150,10 +151,10 @@ class ResNet(nn.Module):
         self.groups = groups
         self.base_width = width_per_group
         if self.input_mode == 'only_input_SIM_images':
-            self.conv1 = nn.Conv2d(16, self.inplanes, kernel_size=7, stride=1, padding=3,
+            self.conv1 = nn.Conv2d(input_nc, self.inplanes, kernel_size=7, stride=1, padding=3,
                                    bias=False)
         else:
-            self.conv1 = nn.Conv2d(17, self.inplanes, kernel_size=7, stride=1, padding=3,
+            self.conv1 = nn.Conv2d(input_nc+1, self.inplanes, kernel_size=7, stride=1, padding=3,
                                    bias=False)
         self.relu = nn.ReLU(inplace=True)
         self.layer1 = self._make_layer(block, 128, layers[0])
@@ -217,7 +218,7 @@ class ResNet(nn.Module):
     def _forward_impl(self, x):
         # See note [TorchScript super()]
         if self.input_mode == 'only_input_SIM_images':
-            input = x[:, 0:16, :, :]
+            input = x[:, 0:self.input_nc, :, :]
         else:
             input = x
         out = self.conv1(input)
@@ -231,7 +232,7 @@ class ResNet(nn.Module):
         if self.LR_highway:
             size_of_image = x.shape
             out = self.relu(out)
-            LR_image = x[:, 16, :, :].view(size_of_image[0],1,size_of_image[2],size_of_image[3])
+            LR_image = x[:, self.input_nc, :, :].view(size_of_image[0],1,size_of_image[2],size_of_image[3])
             out = torch.cat((out,LR_image),1)
             out = self.LR_highway_conv(out)
             # out = self.Tanh(out + x[:, 16, :, :])
@@ -244,8 +245,8 @@ class ResNet(nn.Module):
         return self._forward_impl(x)
 
 
-def _resnet(arch, block, layers, pretrained, progress, input_mode = 'only_input_SIM_images', LR_highway=True, **kwargs,):
-    model = ResNet(block, layers, **kwargs,LR_highway=LR_highway, input_mode = input_mode)
+def _resnet(arch, block, layers, pretrained, progress, input_mode = 'only_input_SIM_images', LR_highway=True,input_nc = 10, **kwargs):
+    model = ResNet(block, layers, **kwargs,LR_highway=LR_highway, input_mode = input_mode, input_nc = input_nc)
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)

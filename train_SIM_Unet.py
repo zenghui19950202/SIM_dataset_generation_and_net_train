@@ -152,8 +152,10 @@ if __name__ == '__main__':
     config.read('configuration.ini')
     SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
 
-    train_directory_file = os.path.dirname(SourceFileDirectory)+'/train.txt'
-    valid_directory_file = os.path.dirname(SourceFileDirectory)+'/valid.txt'
+    # train_directory_file = os.path.dirname(SourceFileDirectory)+'/train.txt'
+    # valid_directory_file = os.path.dirname(SourceFileDirectory)+'/valid.txt'
+    train_directory_file = SourceFileDirectory + '/train.txt'
+    valid_directory_file = SourceFileDirectory + '/valid.txt'
 
     MAX_EVALS = config.getint('hyparameter', 'MAX_EVALS') # the number of hyparameters sets
     MAX_EVALS = 2
@@ -169,8 +171,8 @@ if __name__ == '__main__':
         'Dropout_ratio':  [1]
     }
 
-    SIM_train_dataset = SIM_data(train_directory_file)
-    SIM_valid_dataset = SIM_data(valid_directory_file)
+    SIM_train_dataset = SIM_data(train_directory_file,data_mode = 'SIM_and_sum_images')
+    SIM_valid_dataset = SIM_data(valid_directory_file,data_mode = 'SIM_and_sum_images')
 
     random.seed(70)  # 设置随机种子
     min_loss=1e5
@@ -196,9 +198,9 @@ if __name__ == '__main__':
         SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size, shuffle=True)
         SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size, shuffle=True)
 
-        input_nc, output_nc, num_downs = 17, 1, 5
-        # SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
-        SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], pretrained=False, progress=False, LR_highway=True)
+        num_raw_SIMdata, output_nc, num_downs = 9, 1, 5
+        SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway='add',input_mode = 'only_input_SIM_images', use_dropout=False)
+        # SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], input_mode = 'only_input_SIM_images', LR_highway=False,input_nc = num_raw_SIMdata, pretrained=False, progress=False,)
         # SIMnet = UNet(17,1)
         SIMnet.apply(init_weights)
         start_time = time.time()

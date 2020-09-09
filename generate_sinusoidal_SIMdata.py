@@ -36,7 +36,7 @@ if __name__ == '__main__':
     p.add_operation(SinusoidalPattern(probability=1,image_size=image_size))
     p.sample(10,multi_threaded=True,data_type='train',data_num=9)
 
-    # p = Pipeline_speckle.Pipeline_speckle(source_directory=valid_directory,output_directory="valid")
-    # p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
-    # p.add_operation(SinusoidalPattern(probability=1,image_size=image_size))
-    # p.sample(400,multi_threaded=True,data_ratio=0)
+    p = Pipeline_speckle.Pipeline_speckle(source_directory=valid_directory,output_directory="valid")
+    p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
+    p.add_operation(SinusoidalPattern(probability=1,image_size=image_size))
+    p.sample(10,multi_threaded=True,data_type='valid',data_num=9)

@@ -13,7 +13,7 @@ from math import pi
 class SIM_data(data.Dataset):
     def __init__(self,
                  directory_data_file,
-                 data_mode = 'input_SIM_and_LR_images'
+                 data_mode = 'SIM_and_LR_images'
                  ):
         # data_dict=[]
         # with open(directory_data_file,'r',encoding='utf8') as json_file:
@@ -72,12 +72,14 @@ class SIM_data(data.Dataset):
             # SIM_image_data[i, :, :] = torch.zeros_like(SIMdata_normalized_image_tensor[0,:,:])
 
 
-        if self.data_mode == 'input_SIM_and_LR_images':
+        if self.data_mode == 'SIM_and_LR_images':
             SIM_image_data[image_number, :, :] = LR_normalized_image_tensor  # directly use the LR image as input
-        elif self.data_mode == 'input_SIM_and_sum_images':
+        elif self.data_mode == 'SIM_and_sum_images':
             appro_widefield_image = SIM_image_data.mean(0)
             SIM_image_data[image_number, :,
             :] = appro_widefield_image  # add one layer of approximately wide field image(mean of all the SIM)
+        else:
+            SIM_image_data = SIM_image_data.narrow(0,0,image_number)
 
         return SIM_image_data,torch.stack((HR_normalized_image_tensor,LR_normalized_image_tensor),2)
 
