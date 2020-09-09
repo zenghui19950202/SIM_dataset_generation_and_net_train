@@ -69,11 +69,18 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
         for epoch in range(num_epochs):
             net.train()  # Switch to training mode
             n, start = 0, time.time()
+            ram_time = 0
+            GPU_time = 0
             train_l_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
             train_acc_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
             for X, y in train_iter:
                 optimizer.zero_grad()
+                ram_start_time = 0
                 X, y = X.cuda(), y.cuda()
+                ram_end_time = 0
+                ram_time += ram_end_time - ram_start_time
+
+                GPU_start_time = time.time()
                 y_hat = net(X)
                 y_hat = y_hat.squeeze()
                 y = y.squeeze()
@@ -84,11 +91,13 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
                     y = y.float()
                     train_l_sum += loss.float()
                     n += y.shape[0]
+                GPU_end_time = time.time()
+                GPU_time += GPU_end_time - GPU_start_time
             train_loss = train_l_sum / n
             valid_loss = evaluate_valid_loss(test_iter,criterion, net, device)
-            # scheduler.step(valid_loss)
-            # print('epoch %d, loss %.4f,valid_loss %.4f, time %.1f sec' \
-            #       % (epoch + 1, train_l_sum / n,valid_loss, time.time() - start))
+
+            print('ram_time: %f, GPU_time: %f ' % (ram_time,GPU_time))
+
             early_stopping(valid_loss,net,epoch)
             # writer.add_scalars('scalar/loss', {'train_loss': train_loss, 'valid_loss': valid_loss}, epoch + 1)
             if early_stopping.early_stop:
@@ -183,7 +192,7 @@ if __name__ == '__main__':
     if not os.path.exists(file_directory):
         os.makedirs(file_directory)
     f_hyparameters = open(file_directory + "/hyperparams.txt", 'w')
-    for i in range(2):
+    for i in range(MAX_EVALS):
 
         random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
         lr = random_params['learning_rate']
