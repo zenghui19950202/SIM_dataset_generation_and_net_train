@@ -441,11 +441,13 @@ class UnetGenerator(nn.Module):
         if input_mode == 'only_input_SIM_images':
             self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True,
                                                  norm_layer=norm_layer,LR_highway = LR_highway,input_mode = input_mode)  # add the outermost layer
-        else:
+        elif input_mode == 'input_all_images':
             self.model = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc+1, submodule=unet_block,
                                                  outermost=True,
                                                  norm_layer=norm_layer,
                                                  LR_highway=LR_highway ,input_mode = input_mode)  # add the outermost layer
+        else:
+            raise Exception("error Input mode")
     def forward(self, input):
         """Standard forward"""
         return self.model(input)
@@ -531,7 +533,7 @@ class UnetSkipConnectionBlock(nn.Module):
                     return out
                 else:
                     return self.model(x[:,0:-1,:,:])
-            else:
+            elif self.input_mode == 'input_all_images':
                 if self.LR_highway == 'add':
                     return self.model(x) + x[:,-1,:,:]
                 elif self.LR_highway == 'concat':
@@ -543,6 +545,8 @@ class UnetSkipConnectionBlock(nn.Module):
                     return out
                 else:
                     return self.model(x)
+            else:
+                raise Exception("error Input mode")
         else:  # add skip connections
             return torch.cat([x, self.model(x)], 1)
 

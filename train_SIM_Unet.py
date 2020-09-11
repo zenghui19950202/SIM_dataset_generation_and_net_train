@@ -10,17 +10,13 @@ import random
 import time
 from SpeckleSIMDataLoad import SIM_data
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+from tensorboardX import SummaryWriter
 import resnet_backbone_net as res_SIMnet
-# from Unet_NC2020 import UNet
 import os
-# from tensorboardX import SummaryWriter
 from Networks_Unet_GAN import UnetGenerator
 from early_stopping.pytorchtools import EarlyStopping
 from configparser import ConfigParser
 
-
-# from visdom import Visdom
 
 
 def try_gpu():
@@ -34,13 +30,11 @@ def try_gpu():
 
 def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device, lr=None, weight_decay = 1e-4,logfile_directory=None):
     """Train and evaluate a model with CPU or GPU."""
-    # vis = Visdom(env='model_1')
-    # win = vis.line(X=np.array([0]), Y=np.array([0]), name="1")
-    # writer = SummaryWriter(logfile_directory)
+    writer = SummaryWriter(logfile_directory)
     print('training on', device)
     # nn.DataParallel(net,device_ids=[0,1,2,3])
     # nn.DataParallel(net, device_ids=[0])
-    net = net.cuda()
+    net = net.to(device)
     # optimizer = optim.SGD(net.parameters(), lr=lr)
     weight_p, bias_p = [], []
     for name, p in net.named_parameters():
@@ -65,47 +59,38 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
 
     patience = 20  # 当验证集损失在连续20次训练周期中都没有得到降低时，停止模型训练，以防止模型过拟合
     early_stopping = EarlyStopping(patience, verbose=False)  # 关于 EarlyStopping 的代码可先看博客后面的内容
-    with tqdm(total=num_epochs, desc="Executing train", unit=" epoch") as progress_bar:
-        for epoch in range(num_epochs):
-            net.train()  # Switch to training mode
-            n, start = 0, time.time()
-            ram_time = 0
-            GPU_time = 0
-            train_l_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
-            train_acc_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
-            for X, y in train_iter:
-                optimizer.zero_grad()
-                ram_start_time = 0
-                X, y = X.cuda(), y.cuda()
-                ram_end_time = 0
-                ram_time += ram_end_time - ram_start_time
+    for epoch in range(num_epochs):
+        net.train()  # Switch to training mode
+        n, start = 0, time.time()
+        train_l_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
+        train_acc_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
 
-                GPU_start_time = time.time()
-                y_hat = net(X)
-                y_hat = y_hat.squeeze()
-                y = y.squeeze()
-                loss = criterion(y_hat, y)
-                loss.backward()
-                optimizer.step()
-                with torch.no_grad():
-                    y = y.float()
-                    train_l_sum += loss.float()
-                    n += y.shape[0]
-                GPU_end_time = time.time()
-                GPU_time += GPU_end_time - GPU_start_time
-            train_loss = train_l_sum / n
-            valid_loss = evaluate_valid_loss(test_iter,criterion, net, device)
+        for X, y in train_iter:
+            optimizer.zero_grad()
+            X, y = X.cuda(), y.cuda()
+            y_hat = net(X)
+            y_hat = y_hat.squeeze()
+            y = y.squeeze()
+            loss = criterion(y_hat, y)
+            loss.backward()
+            optimizer.step()
+            with torch.no_grad():
+                y = y.float()
+                train_l_sum += loss.float()
+                n += y.shape[0]
+        train_loss = train_l_sum / n
 
-            print('ram_time: %f, GPU_time: %f ' % (ram_time,GPU_time))
+        valid_loss = evaluate_valid_loss(test_iter,criterion, net, device)
 
-            early_stopping(valid_loss,net,epoch)
-            # writer.add_scalars('scalar/loss', {'train_loss': train_loss, 'valid_loss': valid_loss}, epoch + 1)
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break
-            progress_bar.set_description("epoch" )
-            progress_bar.update(1)
-    # writer.close
+        early_stopping(valid_loss,net,epoch)
+
+        writer.add_scalars('scalar/loss', {'train_loss': train_loss, 'valid_loss': valid_loss}, epoch + 1)
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break
+        print('epoch: %d/%d, train_loss: %f, valid_loss: %f ' % (epoch,num_epochs,train_loss, valid_loss))
+        # print('epoch: %d, train_time: %f, evaluate_time: %f , early_stopping_time: %f ' % (epoch,train_time, evaluate_time,early_stopping_time))
+    writer.close
     return train_loss, valid_loss
 
 def init_weights(m):
@@ -127,7 +112,7 @@ def evaluate_valid_loss(data_iter,criterion, net, device=torch.device('cpu')):
             y = y.squeeze()
             loss_sum += criterion(y_hat, y)
             n += y.shape[0]
-    return loss_sum.item() / n
+    return loss_sum / n
 
 class SR_loss(nn.Module):
     def __init__(self):
@@ -157,6 +142,7 @@ class MSE_loss(nn.Module):
 
 
 if __name__ == '__main__':
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "5, 6"
     config = ConfigParser()
     config.read('configuration.ini')
     SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
@@ -167,54 +153,57 @@ if __name__ == '__main__':
     valid_directory_file = SourceFileDirectory + '/valid.txt'
 
     MAX_EVALS = config.getint('hyparameter', 'MAX_EVALS') # the number of hyparameters sets
-    MAX_EVALS = 2
+    data_generate_mode = config.get('data', 'data_generate_mode')
+    data_input_mode = config.get('data', 'data_input_mode')
+    MAX_EVALS = 4
 
-    # train_directory_file = 'D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/train.txt'
-    # valid_directory_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/valid.txt"
-    # train_directory_file = '/home/yyk/zenghui2020/multispot_SIM_dataset/train.txt'
-    # valid_directory_file = "/home/yyk/zenghui2020/multispot_SIM_dataset/valid.txt"
     param_grid = {
         'learning_rate': list(np.logspace(-4, -2, base=10, num=10)),
-        'batch_size': [8, 16, 32],
+        'batch_size': [8,16,32,64],
         'weight_decay': [1e-5],
         'Dropout_ratio':  [1]
     }
 
-    SIM_train_dataset = SIM_data(train_directory_file,data_mode = 'SIM_and_sum_images')
-    SIM_valid_dataset = SIM_data(valid_directory_file,data_mode = 'SIM_and_sum_images')
+    SIM_train_dataset = SIM_data(train_directory_file,data_mode = data_generate_mode)
+    SIM_valid_dataset = SIM_data(valid_directory_file,data_mode = data_generate_mode)
 
     random.seed(70)  # 设置随机种子
     min_loss=1e5
     num_epochs =2
 
     directory_path = os.getcwd()
-    file_directory = directory_path + '/' + 'random_hyparameters'+ time.strftime("%Y_%m_%d %H_%M_%S", time.localtime())
+    file_directory = directory_path + '/' + data_generate_mode +'_'+ data_input_mode+ time.strftime("%Y_%m_%d %H_%M_%S", time.localtime())
     if not os.path.exists(file_directory):
         os.makedirs(file_directory)
     f_hyparameters = open(file_directory + "/hyperparams.txt", 'w')
     for i in range(MAX_EVALS):
-
         random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
         lr = random_params['learning_rate']
         batch_size = random_params['batch_size']
         weight_decay = random_params['weight_decay']
         Dropout_ratio = random_params['Dropout_ratio']
 
+        logfile_directory = file_directory +'/' + 'lr_' + str(lr) + 'num_epochs_' + str(num_epochs) + 'batch_size_' + str(
+        batch_size) + 'weight_decay_' + str(weight_decay)
+
         device = try_gpu()
         # criterion = nn.MSELoss()
         criterion = MSE_loss()
 
-        SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size, shuffle=True)
-        SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size, shuffle=True)
+        SIM_train_dataloader = DataLoader(SIM_train_dataset,num_workers=8,pin_memory=True, batch_size=batch_size, shuffle=True)
+        SIM_valid_dataloader = DataLoader(SIM_valid_dataset,num_workers=8,pin_memory=True, batch_size=batch_size, shuffle=True)
+        # SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size, shuffle=True)
+        # SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size, shuffle=True)
 
         num_raw_SIMdata, output_nc, num_downs = 9, 1, 5
-        SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway='add',input_mode = 'only_input_SIM_images', use_dropout=False)
+        SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway='add',input_mode = data_input_mode, use_dropout=False)
         # SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], input_mode = 'only_input_SIM_images', LR_highway=False,input_nc = num_raw_SIMdata, pretrained=False, progress=False,)
         # SIMnet = UNet(17,1)
         SIMnet.apply(init_weights)
         start_time = time.time()
-        train_loss, valid_loss = train(SIMnet, SIM_train_dataloader, SIM_valid_dataloader, criterion, num_epochs, batch_size, device, lr,weight_decay,logfile_directory=None)
+        train_loss, valid_loss = train(SIMnet, SIM_train_dataloader, SIM_valid_dataloader, criterion, num_epochs, batch_size, device, lr,weight_decay,logfile_directory=logfile_directory)
         # SIMnet.to('cpu')
+        torch.save(SIMnet.state_dict(), logfile_directory + '/SIMnet.pkl')
 
         if valid_loss < min_loss:
             best_hyperparams = random_params
@@ -225,7 +214,7 @@ if __name__ == '__main__':
             'avg train rmse: %f, avg valid rmse: %f learning_rate:%f, batch_size:%d,weight_decay: %f,Dropout_ratio: %f, time: %f '
             % (train_loss, valid_loss, lr, batch_size, weight_decay,Dropout_ratio, end_time - start_time))
         f_hyparameters.write(
-            'avg train rmse: %f, avg valid rmse: %f learning_rate:%f, batch_size:%d,weight_decay: %f,Dropout_ratio: %f, time: %f '
+            'avg train rmse: %f, avg valid rmse: %f learning_rate:%f, batch_size:%d,weight_decay: %f,Dropout_ratio: %f, time: %f \n '
             % (train_loss, valid_loss, lr, batch_size, weight_decay,Dropout_ratio, end_time - start_time))
         # torch.save(SIMnet.state_dict(), file_directory+ '/SIMnet.pkl')
     f_hyparameters.close()

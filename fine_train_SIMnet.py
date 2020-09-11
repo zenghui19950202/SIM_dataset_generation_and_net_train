@@ -64,6 +64,8 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
     for epoch in range(num_epochs):
         net.train()  # Switch to training mode
         n, start = 0, time.time()
+        ram_time = 0
+        GPU_time = 0
         train_l_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
         train_acc_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
         for X, y in train_iter:
@@ -83,6 +85,7 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
         train_loss = train_l_sum / n
         valid_loss, PSNR = evaluate_valid_loss(test_iter,criterion, net, device)
         scheduler.step(valid_loss)
+
         print('epoch %d, train_loss %f,valid_loss %f, PSNR: %f, time %.1f sec' \
               % (epoch + 1, train_loss,valid_loss,PSNR, time.time() - start))
         early_stopping(valid_loss,net,epoch)
@@ -159,9 +162,10 @@ if __name__ == '__main__':
     valid_directory_file = SourceFileDirectory + '/valid.txt'
 
     MAX_EVALS = config.getint('hyparameter', 'MAX_EVALS')  # the number of hyparameters sets
+    data_mode = config.get('data', 'data_generate_mode')
 
-    SIM_train_dataset = SIM_data(train_directory_file, data_mode = 'input_SIM_and_sum_images')
-    SIM_valid_dataset = SIM_data(valid_directory_file, data_mode = 'input_SIM_and_sum_images')
+    SIM_train_dataset = SIM_data(train_directory_file, data_mode = data_mode)
+    SIM_valid_dataset = SIM_data(valid_directory_file, data_mode = data_mode)
 
     num_epochs =2
 
@@ -181,8 +185,8 @@ if __name__ == '__main__':
     # criterion = SR_loss()
     criterion = MSE_loss()
 
-    SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size, shuffle=True)
-    SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size, shuffle=True)
+    SIM_train_dataloader = DataLoader(SIM_train_dataset,num_workers=8,pin_memory=True, batch_size=batch_size, shuffle=True)
+    SIM_valid_dataloader = DataLoader(SIM_valid_dataset,num_workers=8,pin_memory=True, batch_size=batch_size, shuffle=True)
 
     directory_path = os.getcwd()
     file_name = 'temp'
@@ -191,8 +195,10 @@ if __name__ == '__main__':
         os.makedirs(file_directory)
 
     logfile_directory = file_directory+'/log_file'
-    input_nc, output_nc, num_downs = 10, 1, 5
-    SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
+    num_raw_SIMdata, output_nc, num_downs = 9, 1, 5
+    # SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
+    SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway='add', input_mode='input_all_images',
+                  use_dropout=False)
     # SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], input_mode = 'input_SIM_and_sum_images',LR_highway = False, pretrained=False, progress=False)
     # SIMnet = UNet(17,1)
     SIMnet.apply(init_weights)
