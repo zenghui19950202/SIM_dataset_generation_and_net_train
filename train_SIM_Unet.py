@@ -16,6 +16,7 @@ import os
 from Networks_Unet_GAN import UnetGenerator
 from early_stopping.pytorchtools import EarlyStopping
 from configparser import ConfigParser
+import math
 
 
 def try_gpu():
@@ -80,7 +81,7 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
                 n += y.shape[0]
         train_loss = train_l_sum / n
 
-        valid_loss = evaluate_valid_loss(test_iter, criterion, net, device)
+        valid_loss, PSNR = evaluate_valid_loss(test_iter, criterion, net, device)
 
         early_stopping(valid_loss, net, epoch)
 
@@ -91,7 +92,7 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
         print('epoch: %d/%d, train_loss: %f, valid_loss: %f ' % (epoch, num_epochs, train_loss, valid_loss))
         # print('epoch: %d, train_time: %f, evaluate_time: %f , early_stopping_time: %f ' % (epoch,train_time, evaluate_time,early_stopping_time))
     writer.close
-    return train_loss, valid_loss
+    return train_loss, valid_loss, PSNR
 
 
 def init_weights(m):
@@ -102,7 +103,7 @@ def init_weights(m):
 def evaluate_valid_loss(data_iter, criterion, net, device=torch.device('cpu')):
     net.eval()
     """Evaluate accuracy of a model on the given data set."""
-    loss_sum, n = torch.tensor([0], dtype=torch.float32, device=device), 0
+    loss_sum, PSNR, n, = torch.tensor([0], dtype=torch.float32, device=device), torch.tensor([0], dtype=torch.float32,device=device), 0
     for X, y in data_iter:
         # Copy the data to device.
         X, y = X.cuda(), y.cuda()
@@ -112,8 +113,21 @@ def evaluate_valid_loss(data_iter, criterion, net, device=torch.device('cpu')):
             y_hat = y_hat.squeeze()
             y = y.squeeze()
             loss_sum += criterion(y_hat, y)
+            PSNR += calculate_psnr(y_hat, y)
             n += y.shape[0]
-    return loss_sum / n
+    return loss_sum / n, PSNR/n
+
+
+def calculate_psnr(img_SR, img_HR_LR):
+    img_SR = (img_SR * 0.5 + 0.5)
+    img_HR_LR = (img_HR_LR * 0.5 + 0.5)
+    criterion = MSE_loss()
+    mse = criterion(img_SR,img_HR_LR)
+    if len(img_HR_LR.shape) == 4:
+        img_HR = img_HR_LR[:, :, :, 0]
+    elif len(img_HR_LR.shape) == 3:
+        img_HR = img_HR_LR[:, :, 0]
+    return 20 * math.log10(img_HR.max() / math.sqrt(mse))
 
 
 class SR_loss(nn.Module):
@@ -163,7 +177,7 @@ if __name__ == '__main__':
     net_type = config.get('net', 'net_type')
     LR_highway_type = config.get('LR_highway', 'LR_highway_type')
 
-    MAX_EVALS = 4
+    MAX_EVALS = 1
 
     param_grid = {
         'learning_rate': list(np.logspace(-4, -2, base=10, num=10)),
@@ -179,8 +193,8 @@ if __name__ == '__main__':
     min_loss = 1e5
     num_epochs = 2
 
-    directory_path = os.getcwd()
-    file_directory = directory_path + '/' + data_generate_mode + '_' + data_input_mode + '_' + LR_highway_type + '_' + time.strftime(
+    directory_path = os.path.abspath(os.path.dirname(os.getcwd()))
+    file_directory = directory_path + '/train_result/' + net_type + '_' + data_generate_mode + '_' + data_input_mode + '_' + LR_highway_type + '_' + time.strftime(
         "%Y_%m_%d %H_%M_%S", time.localtime())
     if not os.path.exists(file_directory):
         os.makedirs(file_directory)
@@ -214,11 +228,12 @@ if __name__ == '__main__':
                                         input_mode=data_input_mode, LR_highway=LR_highway_type,
                                         input_nc=num_raw_SIMdata,
                                         pretrained=False, progress=False, )
-        else: raise Exception("error net type")
+        else:
+            raise Exception("error net type")
         SIMnet.apply(init_weights)
         start_time = time.time()
-        train_loss, valid_loss = train(SIMnet, SIM_train_dataloader, SIM_valid_dataloader, criterion, num_epochs,
-                                       batch_size, device, lr, weight_decay, logfile_directory=logfile_directory)
+        train_loss, valid_loss, PSNR = train(SIMnet, SIM_train_dataloader, SIM_valid_dataloader, criterion, num_epochs,
+                                             batch_size, device, lr, weight_decay, logfile_directory=logfile_directory)
         # SIMnet.to('cpu')
         torch.save(SIMnet.state_dict(), logfile_directory + '/SIMnet.pkl')
 
@@ -228,11 +243,11 @@ if __name__ == '__main__':
         end_time = time.time()
 
         print(
-            'avg train rmse: %f, avg valid rmse: %f learning_rate:%f, batch_size:%d,weight_decay: %f,Dropout_ratio: %f, time: %f '
-            % (train_loss, valid_loss, lr, batch_size, weight_decay, Dropout_ratio, end_time - start_time))
+            'avg train rmse: %f, avg valid rmse: %f ,PSNR: %f, learning_rate:%f, batch_size:%d,weight_decay: %f,Dropout_ratio: %f, time: %f '
+            % (train_loss, valid_loss, PSNR, lr, batch_size, weight_decay, Dropout_ratio, end_time - start_time))
         f_hyparameters.write(
-            'avg train rmse: %f, avg valid rmse: %f learning_rate:%f, batch_size:%d,weight_decay: %f,Dropout_ratio: %f, time: %f \n '
-            % (train_loss, valid_loss, lr, batch_size, weight_decay, Dropout_ratio, end_time - start_time))
+            'avg train rmse: %f, avg valid rmse: %f ,PSNR: %f, learning_rate:%f, batch_size:%d,weight_decay: %f,Dropout_ratio: %f, time: %f \n '
+            % (train_loss, valid_loss, PSNR, lr, batch_size, weight_decay, Dropout_ratio, end_time - start_time))
         # torch.save(SIMnet.state_dict(), file_directory+ '/SIMnet.pkl')
     f_hyparameters.close()
     print(
