@@ -12,6 +12,7 @@ from torchvision import transforms
 from PIL import Image
 import os
 import random
+from configparser import ConfigParser
 
 
 # def AddSinusoidalPattern(pipeline, probability=1):
@@ -32,8 +33,7 @@ class SinusoidalPattern(Operations.Operation):
     """
     This class is used to add Sinusoidal Pattern on images.
     """
-    def __init__(self,probability, NumPhase=3, Magnification=150, PixelSizeOfCCD=6800, EmWaveLength=635, NA=0.9, SNR=10000,
-                 image_size=256, pattern_frequency_ratio = 0.8):  # unit: nm
+    def __init__(self,probability):  # unit: nm
         """
         As well as the always required :attr:`probability` parameter, the
         constructor requires a :attr:`percentage_area` to control the area
@@ -45,16 +45,19 @@ class SinusoidalPattern(Operations.Operation):
          performed when it is invoked in the pipeline.
         :type probability: Float
         """
-        self.Magnification = Magnification
-        self.PixelSizeOfCCD = PixelSizeOfCCD
-        self.EmWaveLength = EmWaveLength
-        self.NA = NA
-        self.NumPhase = NumPhase
-        self.SNR = SNR
-        self.image_size = image_size
-        self.pattern_frequency_ratio = pattern_frequency_ratio
-        self.xx, self.yy, fx, fy = self.GridGenerate(image_size)
-        self.f0 = 2 * NA / EmWaveLength  # The coherent cutoff frequency
+        config = ConfigParser()
+        config.read('configuration.ini')
+        SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
+        self.Magnification = config.getint('SIM_data_generation', 'Magnification')
+        self.PixelSizeOfCCD = config.getint('SIM_data_generation', 'PixelSizeOfCCD')
+        self.EmWaveLength = config.getint('SIM_data_generation', 'EmWaveLength')
+        self.NA = config.getfloat('SIM_data_generation', 'NA')
+        self.NumPhase = config.getint('SIM_data_generation', 'NumPhase')
+        self.SNR = config.getint('SIM_data_generation', 'SNR')
+        self.image_size = config.getint('SIM_data_generation', 'image_size')
+        self.pattern_frequency_ratio = config.getfloat('SIM_data_generation', 'pattern_frequency_ratio')
+        self.xx, self.yy, fx, fy = self.GridGenerate(self.image_size)
+        self.f0 = 2 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
         self.f = pow((fx ** 2 + fy ** 2), 1 / 2)  # The spatial freqneucy fr=sqrt( fx^2 + fy^2 )
 
         self.OTF = self.OTF_form(fc_ratio=1)

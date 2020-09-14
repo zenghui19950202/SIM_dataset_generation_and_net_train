@@ -21,8 +21,8 @@ class Pipeline_speckle(Pipeline):
        super(Pipeline_speckle,self).__init__(source_directory=source_directory, output_directory=output_directory, save_format=save_format)
        self.source_directory=source_directory
 
-       self.train_txt_directory = os.path.dirname(self.source_directory) + '/train.txt'
-       self.valid_txt_directory = os.path.dirname(self.source_directory) + '/valid.txt'
+       self.train_txt_directory = os.path.dirname(self.source_directory) + '/SIMdata_SR_train.txt'
+       self.valid_txt_directory = os.path.dirname(self.source_directory) + '/SIMdata_SR_valid.txt'
 
 
     def sample(self, n, multi_threaded=True,data_type = 'train',data_num = 16):
