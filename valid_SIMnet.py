@@ -60,7 +60,7 @@ def evaluate_valid_loss(data_iter, criterion, net, device=torch.device('cpu')):
 if __name__ == '__main__':
     config = ConfigParser()
     config.read('configuration.ini')
-    SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
+    SourceFileDirectory = config.get('image_file', 'varification_file_directory')
 
     num_raw_SIMdata, output_nc, num_downs = 9, 1, 5
     data_generate_mode = config.get('data', 'data_generate_mode')
@@ -68,12 +68,12 @@ if __name__ == '__main__':
     net_type = config.get('net', 'net_type')
     LR_highway_type = config.get('LR_highway', 'LR_highway_type')
 
-    # SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1],input_mode = 'input_SIM_and_sum_images',LR_highway = False, pretrained=False, progress=False)
-    SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=LR_highway_type, input_mode=data_input_mode,
-                           use_dropout=False)
+    SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1],input_mode = 'only_input_SIM_images',LR_highway = 'add', pretrained=False, progress=False)
+    # SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=LR_highway_type, input_mode=data_input_mode,
+    #                        use_dropout=False)
     # SIMnet.load_state_dict(torch.load('F:\PHD\SIMDataSet/SIMnet.pkl'))
     SIMnet.load_state_dict(torch.load(
-        'F:\PHD\SIMnet_train_result\input_SIMdata_and_sum_image_lr_0.001291549665014884num_epochs_300batch_size_64weight_decay_1e-05/SIMnet.pkl',map_location='cuda:0'))
+        'F:\PHD\SIMnet_train_result\lr_0.0001668100537200059num_epochs_300batch_size_32weight_decay_1e-05/SIMnet.pkl',map_location='cuda:0'))
 
     train_directory_file = SourceFileDirectory + '/SIMdata_SR_train.txt'
     # valid_directory_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/valid.txt"
@@ -84,5 +84,5 @@ if __name__ == '__main__':
     SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=1, shuffle=True)
     # valid_loss = evaluate_valid_loss(SIM_valid_dataloader, criterion, SIMnet, device=torch.device('cpu'))
     # print('valid_loss:%f',valid_loss)
-    a, b = SIM_valid_dataset[0]
+    a, b = SIM_valid_dataset[1]
     result_net_valiated(SIMnet, a, b)

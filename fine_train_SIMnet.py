@@ -161,18 +161,19 @@ if __name__ == '__main__':
     train_directory_file = SourceFileDirectory + '/SIMdata_SR_train.txt'
     valid_directory_file = SourceFileDirectory + '/SIMdata_SR_valid.txt'
 
-    data_mode = config.get('data', 'data_generate_mode')
+    data_generate_mode = config.get('data', 'data_generate_mode')
     data_input_mode = config.get('data', 'data_input_mode')
+    net_type = config.get('net', 'net_type')
     LR_highway_type = config.get('LR_highway', 'LR_highway_type')
 
-    SIM_train_dataset = SIM_data(train_directory_file, data_mode = data_mode)
-    SIM_valid_dataset = SIM_data(valid_directory_file, data_mode = data_mode)
+    SIM_train_dataset = SIM_data(train_directory_file, data_mode = data_generate_mode)
+    SIM_valid_dataset = SIM_data(valid_directory_file, data_mode = data_generate_mode)
 
     num_epochs =2
 
     random_params = {
-        'learning_rate':  0.00129,
-        'batch_size': 64,
+        'learning_rate':  0.000167,
+        'batch_size': 32,
         'Dropout_ratio': 1,
         'weight_decay': 1e-5
     }
@@ -191,19 +192,26 @@ if __name__ == '__main__':
     SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size, shuffle=True)
     SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size, shuffle=True)
 
-    directory_path = os.getcwd()
-    file_name = 'temp'
-    file_directory = directory_path + '/' + file_name
+    directory_path = os.path.abspath(os.path.dirname(os.getcwd()))
+    file_directory = directory_path + '/train_result/' + net_type + '_' + data_generate_mode + '_' + data_input_mode + '_' + LR_highway_type + '_' + time.strftime(
+        "%Y_%m_%d %H_%M_%S", time.localtime())
+
+    # directory_path = os.getcwd()
+    # file_name = 'temp'
+    # file_directory = directory_path + '/' + file_name
     if not os.path.exists(file_directory):
         os.makedirs(file_directory)
 
     logfile_directory = file_directory+'/log_file'
     num_raw_SIMdata, output_nc, num_downs = 9, 1, 5
-    # SIMnet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False)
-    SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=LR_highway_type, input_mode = data_input_mode,
-                  use_dropout=False)
-    # SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1], input_mode = 'input_SIM_and_sum_images',LR_highway = False, pretrained=False, progress=False)
-    # SIMnet = UNet(17,1)
+    if net_type == 'Unet':
+        SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=LR_highway_type,
+                               input_mode=data_input_mode, use_dropout=False)
+    elif net_type == 'resnet':
+        SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1],
+                                    input_mode=data_input_mode, LR_highway=LR_highway_type,
+                                    input_nc=num_raw_SIMdata,
+                                    pretrained=False, progress=False, )
     SIMnet.apply(init_weights)
     start_time = time.time()
     train_loss, valid_loss = train(SIMnet, SIM_train_dataloader, SIM_valid_dataloader, criterion, num_epochs, batch_size, device, lr,weight_decay,logfile_directory)

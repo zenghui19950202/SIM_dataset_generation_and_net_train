@@ -412,7 +412,7 @@ class ResnetBlock(nn.Module):
 class UnetGenerator(nn.Module):
     """Create a Unet-based generator"""
 
-    def __init__(self, input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, LR_highway = None, use_dropout=False,input_mode = 'only_input_SIM_images',):
+    def __init__(self, input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d, LR_highway = None, use_dropout=False,input_mode = 'only_input_SIM_images'):
         """Construct a Unet generator
         Parameters:
             input_nc (int)  -- the number of channels in input images
@@ -424,6 +424,7 @@ class UnetGenerator(nn.Module):
         We construct the U-Net from the innermost layer to the outermost layer.
         It is a recursive process.
         """
+        self.double_conv = double_conv
         super(UnetGenerator, self).__init__()
         # construct unet structure
         unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=None, norm_layer=norm_layer,
@@ -452,7 +453,18 @@ class UnetGenerator(nn.Module):
         """Standard forward"""
         return self.model(input)
 
-
+class double_conv(nn.Module):
+    '''(conv => BN => ReLU) * 2'''
+    def __init__(self, in_ch):
+        super(double_conv, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, in_ch, 3, padding=1),
+            # nn.BatchNorm2d(in_ch),
+            nn.LeakyReLU(0.2, True),
+            nn.Conv2d(in_ch, in_ch, 3, padding=1),
+            # nn.BatchNorm2d(in_ch),
+            nn.LeakyReLU(0.2, True)
+        )
 class UnetSkipConnectionBlock(nn.Module):
     """Defines the Unet submodule with skip connection.
         X -------------------identity----------------------
@@ -523,7 +535,8 @@ class UnetSkipConnectionBlock(nn.Module):
         if self.outermost:
             if self.input_mode == 'only_input_SIM_images':
                 if self.LR_highway == 'add':
-                    return self.model(x[:,0:-1,:,:]) + x[:,-1,:,:]
+                    y = self.model(x[:,0:-1,:,:])
+                    return y + x[:, -1, :, :].view(y.size())
                 elif self.LR_highway == 'concat':
                     model_out = self.model(x[:,0:-1,:,:])
                     concat_data = torch.cat([model_out, x[:,-1,:,:].view(model_out.size())], 1)
@@ -535,7 +548,8 @@ class UnetSkipConnectionBlock(nn.Module):
                     return self.model(x[:,0:-1,:,:])
             elif self.input_mode == 'input_all_images':
                 if self.LR_highway == 'add':
-                    return self.model(x) + x[:,-1,:,:]
+                    y = self.model(x)
+                    return  y + x[:,-1,:,:].view(y.size())
                 elif self.LR_highway == 'concat':
                     model_out = self.model(x)
                     concat_data = torch.cat([model_out, x[:,-1,:,:].view(model_out.size())], 1)
@@ -631,5 +645,5 @@ class PixelDiscriminator(nn.Module):
 
 if __name__ == '__main__':
     input_nc , output_nc ,num_downs = 9, 1, 6
-    SIM_Unet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d,input_mode = 'only_input_SIM_images',LR_highway = 'cat',use_dropout=False)
+    SIM_Unet = UnetGenerator(input_nc, output_nc, num_downs, ngf=64, norm_layer=nn.BatchNorm2d,input_mode = 'only_input_SIM_images',LR_highway = 'add',use_dropout=False)
     summary(SIM_Unet, input_size=(10, 256, 256))

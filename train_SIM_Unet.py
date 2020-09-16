@@ -17,6 +17,7 @@ from Networks_Unet_GAN import UnetGenerator
 from early_stopping.pytorchtools import EarlyStopping
 from configparser import ConfigParser
 import math
+from Unet_NC2020 import UNet
 
 
 def try_gpu():
@@ -52,11 +53,9 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
 
     # optimizer = optim.Adam(net.parameters(), lr=lr,weight_decay=0)
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=4,
-                                                           verbose=False, threshold=0.0001, threshold_mode='rel',
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.2, patience=5,
+                                                           verbose=False, threshold=0.00001, threshold_mode='rel',
                                                            cooldown=0, min_lr=0, eps=1e-08)
-
-    epoch_tensor = torch.rand(1)
 
     patience = 20  # 当验证集损失在连续20次训练周期中都没有得到降低时，停止模型训练，以防止模型过拟合
     early_stopping = EarlyStopping(patience, verbose=False)  # 关于 EarlyStopping 的代码可先看博客后面的内容
@@ -68,7 +67,7 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
 
         for X, y in train_iter:
             optimizer.zero_grad()
-            X, y = X.cuda(), y.cuda()
+            X, y = X.to(device), y.to(device)
             y_hat = net(X)
             y_hat = y_hat.squeeze()
             y = y.squeeze()
@@ -78,18 +77,19 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
             with torch.no_grad():
                 y = y.float()
                 train_l_sum += loss.float()
-                n += y.shape[0]
+                n += 1
         train_loss = train_l_sum / n
 
         valid_loss, PSNR = evaluate_valid_loss(test_iter, criterion, net, device)
-
+        scheduler.step(valid_loss)
         early_stopping(valid_loss, net, epoch)
 
         writer.add_scalars('scalar/loss', {'train_loss': train_loss, 'valid_loss': valid_loss}, epoch + 1)
         if early_stopping.early_stop:
             print("Early stopping")
             break
-        print('epoch: %d/%d, train_loss: %f, valid_loss: %f ' % (epoch, num_epochs, train_loss, valid_loss))
+        print('epoch: %d/%d, train_loss: %f, valid_loss: %f ， PSNR ：%f ' % (
+        epoch + 1, num_epochs, train_loss, valid_loss, PSNR))
         # print('epoch: %d, train_time: %f, evaluate_time: %f , early_stopping_time: %f ' % (epoch,train_time, evaluate_time,early_stopping_time))
     writer.close
     return train_loss, valid_loss, PSNR
@@ -103,10 +103,11 @@ def init_weights(m):
 def evaluate_valid_loss(data_iter, criterion, net, device=torch.device('cpu')):
     net.eval()
     """Evaluate accuracy of a model on the given data set."""
-    loss_sum, PSNR, n, = torch.tensor([0], dtype=torch.float32, device=device), torch.tensor([0], dtype=torch.float32,device=device), 0
+    loss_sum, PSNR, n, = torch.tensor([0], dtype=torch.float32, device=device), torch.tensor([0], dtype=torch.float32,
+                                                                                             device=device), 0
     for X, y in data_iter:
         # Copy the data to device.
-        X, y = X.cuda(), y.cuda()
+        X, y = X.to(device), y.to(device)
         with torch.no_grad():
             y = y.float()
             y_hat = net(X)
@@ -114,20 +115,25 @@ def evaluate_valid_loss(data_iter, criterion, net, device=torch.device('cpu')):
             y = y.squeeze()
             loss_sum += criterion(y_hat, y)
             PSNR += calculate_psnr(y_hat, y)
-            n += y.shape[0]
-    return loss_sum / n, PSNR/n
+            n += 1
+    return loss_sum / n, PSNR / n
 
 
 def calculate_psnr(img_SR, img_HR_LR):
     img_SR = (img_SR * 0.5 + 0.5)
     img_HR_LR = (img_HR_LR * 0.5 + 0.5)
-    criterion = MSE_loss()
-    mse = criterion(img_SR,img_HR_LR)
     if len(img_HR_LR.shape) == 4:
         img_HR = img_HR_LR[:, :, :, 0]
+        L2_diff = torch.pow((img_SR - img_HR), 2)
+        MSE = L2_diff.mean(dim=1).mean(dim=1)
+        img_HR_max = img_HR.max(dim=1)[0].max(dim=1)[0]
     elif len(img_HR_LR.shape) == 3:
         img_HR = img_HR_LR[:, :, 0]
-    return 20 * math.log10(img_HR.max() / math.sqrt(mse))
+        L2_diff = torch.pow((img_SR - img_HR), 2)
+        MSE = L2_diff.mean()
+        img_HR_max = img_HR.max()
+    PSNR = torch.mean(20 * torch.log10(img_HR_max / torch.pow(MSE, 1 / 2)))
+    return PSNR
 
 
 class SR_loss(nn.Module):
@@ -176,8 +182,8 @@ if __name__ == '__main__':
     data_input_mode = config.get('data', 'data_input_mode')
     net_type = config.get('net', 'net_type')
     LR_highway_type = config.get('LR_highway', 'LR_highway_type')
-
-    MAX_EVALS = 1
+    data_num = config.getint('SIM_data_generation', 'data_num')  # the number of raw SIM images
+    num_epochs = config.getint('hyparameter', 'num_epochs')  # the number of raw SIM images
 
     param_grid = {
         'learning_rate': list(np.logspace(-4, -2, base=10, num=10)),
@@ -189,13 +195,11 @@ if __name__ == '__main__':
     SIM_train_dataset = SIM_data(train_directory_file, data_mode=data_generate_mode)
     SIM_valid_dataset = SIM_data(valid_directory_file, data_mode=data_generate_mode)
 
-    random.seed(70)  # 设置随机种子
+    random.seed(50)  # 设置随机种子
     min_loss = 1e5
-    num_epochs = 2
 
     directory_path = os.path.abspath(os.path.dirname(os.getcwd()))
-    file_directory = directory_path + '/train_result/' + net_type + '_' + data_generate_mode + '_' + data_input_mode + '_' + LR_highway_type + '_' + time.strftime(
-        "%Y_%m_%d %H_%M_%S", time.localtime())
+    file_directory = directory_path + '/train_result/' + net_type + '_' + data_generate_mode + '_' + data_input_mode + '_' + LR_highway_type
     if not os.path.exists(file_directory):
         os.makedirs(file_directory)
     f_hyparameters = open(file_directory + "/hyperparams.txt", 'w')
@@ -214,12 +218,16 @@ if __name__ == '__main__':
         # criterion = nn.MSELoss()
         criterion = MSE_loss()
 
-        SIM_train_dataloader = DataLoader(SIM_train_dataset, num_workers=8, pin_memory=True, batch_size=batch_size,
+        SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size,
                                           shuffle=True)
-        SIM_valid_dataloader = DataLoader(SIM_valid_dataset, num_workers=8, pin_memory=True, batch_size=batch_size,
+        SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size,
                                           shuffle=True)
+        # SIM_train_dataloader = DataLoader(SIM_train_dataset, num_workers=8, pin_memory=True, batch_size=batch_size,
+        #                                   shuffle=True)
+        # SIM_valid_dataloader = DataLoader(SIM_valid_dataset, num_workers=8, pin_memory=True, batch_size=batch_size,
+        #                                   shuffle=True)
 
-        num_raw_SIMdata, output_nc, num_downs = 9, 1, 5
+        num_raw_SIMdata, output_nc, num_downs = data_num, 1, 5
         if net_type == 'Unet':
             SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=LR_highway_type,
                                    input_mode=data_input_mode, use_dropout=False)
@@ -228,6 +236,8 @@ if __name__ == '__main__':
                                         input_mode=data_input_mode, LR_highway=LR_highway_type,
                                         input_nc=num_raw_SIMdata,
                                         pretrained=False, progress=False, )
+        elif net_type == 'wide_Unet':
+            SIMnet = UNet(num_raw_SIMdata, 1, input_mode=data_input_mode, LR_highway=LR_highway_type)
         else:
             raise Exception("error net type")
         SIMnet.apply(init_weights)

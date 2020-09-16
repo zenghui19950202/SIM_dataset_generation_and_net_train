@@ -131,7 +131,7 @@ class ResNet(nn.Module):
 
     def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
                  groups=1, width_per_group=64, input_mode = 'only_input_SIM_images',replace_stride_with_dilation=None,
-                 norm_layer=None, LR_highway = True,input_nc = 10):
+                 norm_layer=None, LR_highway = True,input_nc = 9):
         super(ResNet, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
@@ -153,9 +153,12 @@ class ResNet(nn.Module):
         if self.input_mode == 'only_input_SIM_images':
             self.conv1 = nn.Conv2d(input_nc, self.inplanes, kernel_size=7, stride=1, padding=3,
                                    bias=False)
-        else:
-            self.conv1 = nn.Conv2d(input_nc+1, self.inplanes, kernel_size=7, stride=1, padding=3,
+        elif self.input_mode == 'input_all_images':
+            self.conv1 = nn.Conv2d(input_nc + 1, self.inplanes, kernel_size=7, stride=1, padding=3,
                                    bias=False)
+        else:
+            raise Exception("error Input mode")
+
         self.relu = nn.ReLU(inplace=True)
         self.layer1 = self._make_layer(block, 128, layers[0])
         self.layer2 = self._make_layer(block, 64, layers[1], stride=1,
@@ -219,8 +222,12 @@ class ResNet(nn.Module):
         # See note [TorchScript super()]
         if self.input_mode == 'only_input_SIM_images':
             input = x[:, 0:self.input_nc, :, :]
-        else:
+        elif self.input_mode == 'input_all_images':
             input = x
+        else:
+            raise Exception("error Input mode")
+        size_of_image = x.shape
+        LR_image = x[:, self.input_nc, :, :].view(size_of_image[0], 1, size_of_image[2], size_of_image[3])
         out = self.conv1(input)
         out = self.relu(out)
 
@@ -229,14 +236,14 @@ class ResNet(nn.Module):
         out = self.layer3(out)
         out = self.layer4(out)
         out = self.final_conv(out)
-        if self.LR_highway:
-            size_of_image = x.shape
+        if self.LR_highway == 'concat':
             out = self.relu(out)
-            LR_image = x[:, self.input_nc, :, :].view(size_of_image[0],1,size_of_image[2],size_of_image[3])
             out = torch.cat((out,LR_image),1)
             out = self.LR_highway_conv(out)
+            out = self.Tanh(out)
             # out = self.Tanh(out + x[:, 16, :, :])
-        out = self.Tanh(out)
+        elif self.LR_highway == 'add':
+            out += LR_image
         # x = nn.Tanh(x)
 
         return out
@@ -245,7 +252,7 @@ class ResNet(nn.Module):
         return self._forward_impl(x)
 
 
-def _resnet(arch, block, layers, pretrained, progress, input_mode = 'only_input_SIM_images', LR_highway=True,input_nc = 10, **kwargs):
+def _resnet(arch, block, layers, pretrained, progress, input_mode = 'only_input_SIM_images', LR_highway=True,input_nc = 9, **kwargs):
     model = ResNet(block, layers, **kwargs,LR_highway=LR_highway, input_mode = input_mode, input_nc = input_nc)
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
@@ -334,5 +341,5 @@ class NonLocalBlock(nn.Module):
 
 
 if __name__ == '__main__':
-    SIMnet = _resnet('resnet34', BasicBlock, [2, 2, 2, 2],input_mode = 'only_input_SIM_images',LR_highway=True, pretrained=False, progress=False)
-    summary(SIMnet, input_size=(17, 128, 128))
+    SIMnet = _resnet('resnet34', BasicBlock, [1, 1, 1, 1],input_mode = 'only_input_SIM_images',LR_highway=True, pretrained=False, progress=False)
+    summary(SIMnet, input_size=(10, 128, 128))
