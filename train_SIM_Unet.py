@@ -218,14 +218,14 @@ if __name__ == '__main__':
         # criterion = nn.MSELoss()
         criterion = MSE_loss()
 
-        SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size,
-                                          shuffle=True)
-        SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size,
-                                          shuffle=True)
-        # SIM_train_dataloader = DataLoader(SIM_train_dataset, num_workers=8, pin_memory=True, batch_size=batch_size,
+        # SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size,
         #                                   shuffle=True)
-        # SIM_valid_dataloader = DataLoader(SIM_valid_dataset, num_workers=8, pin_memory=True, batch_size=batch_size,
+        # SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size,
         #                                   shuffle=True)
+        SIM_train_dataloader = DataLoader(SIM_train_dataset, num_workers=8, pin_memory=True, batch_size=batch_size,
+                                          shuffle=True)
+        SIM_valid_dataloader = DataLoader(SIM_valid_dataset, num_workers=8, pin_memory=True, batch_size=batch_size,
+                                          shuffle=True)
 
         num_raw_SIMdata, output_nc, num_downs = data_num, 1, 5
         if net_type == 'Unet':
