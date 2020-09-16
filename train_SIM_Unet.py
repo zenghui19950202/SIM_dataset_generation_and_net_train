@@ -186,8 +186,8 @@ if __name__ == '__main__':
     num_epochs = config.getint('hyparameter', 'num_epochs')  # the number of raw SIM images
 
     param_grid = {
-        'learning_rate': list(np.logspace(-4, -2, base=10, num=10)),
-        'batch_size': [8, 16, 32, 64],
+        'learning_rate': list(np.logspace(-5, -4, base=10, num=10)),
+        'batch_size': [32, 48],
         'weight_decay': [1e-5],
         'Dropout_ratio': [1]
     }
