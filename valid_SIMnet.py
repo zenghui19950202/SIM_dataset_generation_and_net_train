@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 import resnet_backbone_net as res_SIMnet
 import SRimage_metrics
 from configparser import ConfigParser
+from Unet_NC2020 import UNet
 
 
 def result_net_valiated(SIMnet, input_SIM_images, HR_LR_image):
@@ -20,6 +21,10 @@ def result_net_valiated(SIMnet, input_SIM_images, HR_LR_image):
     normalized_image_minibatch = input_SIM_images.view([1, image_size[0], image_size[1], image_size[2]])
     mean_image = normalized_image_minibatch[:, data_num, :, :]
 
+    # mean_image = mean_image* 0.5 + 0.5
+    # LR_image = LR_image * 0.5 + 0.5
+    # HR_image = HR_image * 0.5 + 0.5
+
     result_image = SIMnet(normalized_image_minibatch)
     result_image = result_image.squeeze()
 
@@ -27,8 +32,9 @@ def result_net_valiated(SIMnet, input_SIM_images, HR_LR_image):
     PSNR_LR_HR = SRimage_metrics.calculate_psnr(LR_image, HR_image)
     PSNR_mean_HR = SRimage_metrics.calculate_psnr(mean_image, HR_image)
     print('PSNR:%f , PSNR_LR_HR: %f, PSNR_mean_HR: %f' % (PSNR, PSNR_LR_HR, PSNR_mean_HR))
-    image = result_image * 0.5 + 0.5
-    image_PIL = transforms.ToPILImage()(image).convert('RGB')
+
+    result_image = result_image * 0.5 + 0.5
+    image_PIL = transforms.ToPILImage()(result_image).convert('RGB')
     image_PIL.show()
 
     # image = HR_LR_image[:, :, 1] * 0.5 + 0.5
@@ -68,12 +74,13 @@ if __name__ == '__main__':
     net_type = config.get('net', 'net_type')
     LR_highway_type = config.get('LR_highway', 'LR_highway_type')
 
-    SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1],input_mode = 'only_input_SIM_images',LR_highway = 'add', pretrained=False, progress=False)
+    SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 2, 2, 1],input_mode = 'input_all_images',LR_highway = 'add', pretrained=False, progress=False)
     # SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=LR_highway_type, input_mode=data_input_mode,
     #                        use_dropout=False)
     # SIMnet.load_state_dict(torch.load('F:\PHD\SIMDataSet/SIMnet.pkl'))
+    # SIMnet = UNet(num_raw_SIMdata, 1, input_mode=data_input_mode, LR_highway=LR_highway_type)
     SIMnet.load_state_dict(torch.load(
-        'F:\PHD\SIMnet_train_result\lr_0.0001668100537200059num_epochs_300batch_size_32weight_decay_1e-05/SIMnet.pkl',map_location='cuda:0'))
+        'F:\PHD\SIMnet_train_result/resnet_input_all_add_block_1221_lr_0.0005994842503189409num_epochs_300batch_size_32weight_decay_1e-05/SIMnet.pkl',map_location='cuda:0'))
 
     train_directory_file = SourceFileDirectory + '/SIMdata_SR_train.txt'
     # valid_directory_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/valid.txt"
@@ -84,5 +91,5 @@ if __name__ == '__main__':
     SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=1, shuffle=True)
     # valid_loss = evaluate_valid_loss(SIM_valid_dataloader, criterion, SIMnet, device=torch.device('cpu'))
     # print('valid_loss:%f',valid_loss)
-    a, b = SIM_valid_dataset[1]
+    a, b = SIM_valid_dataset[0]
     result_net_valiated(SIMnet, a, b)
