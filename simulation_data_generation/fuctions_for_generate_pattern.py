@@ -6,13 +6,13 @@ import torch
 import math
 import numpy as np
 from Augmentor import Operations
-# from Augmentor import Pipeline
-# import Pipeline
 from torchvision import transforms
-from PIL import Image
-import os
 import random
 from configparser import ConfigParser
+import torch.nn as nn
+import torch.nn.functional as F
+from torchvision import transforms
+from PIL import Image
 
 
 # def AddSinusoidalPattern(pipeline, probability=1):
@@ -46,7 +46,7 @@ class SinusoidalPattern(Operations.Operation):
         :type probability: Float
         """
         config = ConfigParser()
-        config.read('configuration.ini')
+        config.read('../configuration.ini')
         SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
         self.Magnification = config.getint('SIM_data_generation', 'Magnification')
         self.PixelSizeOfCCD = config.getint('SIM_data_generation', 'PixelSizeOfCCD')
@@ -103,6 +103,7 @@ class SinusoidalPattern(Operations.Operation):
         # xx, yy, _, _ = self.GridGenerate(image=torch.rand(7, 7))
         # xx, yy, fx, fy = self.GridGenerate(image)
         SinPatternPIL_Image = []
+        SIMdata_PIL_Image = []
         random_initial_direction_phase = random.random() * 2 * math.pi
         for i in range(3):
             theta = i * 2 / 3 * math.pi + random_initial_direction_phase
@@ -113,13 +114,17 @@ class SinusoidalPattern(Operations.Operation):
                 phase = j * 2 / self.NumPhase * math.pi + random_initial_phase
                 SinPattern = (torch.cos(
                     phase + 2 * math.pi * (SpatialFrequencyX * self.xx + SpatialFrequencyY * self.yy)) + 1) / 2
-                SinPattern_OTF_filter = self.OTF_Filter(SinPattern * image,self.OTF)
-                SinPattern_OTF_filter_gaussian_noise = self.add_gaussian_noise(SinPattern_OTF_filter)
-                SinPattern_OTF_filter_gaussian_noise = SinPattern_OTF_filter_gaussian_noise.float()
-                SinPattern_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(SinPattern_OTF_filter_gaussian_noise).convert('RGB')
-                SinPatternPIL_Image.append(SinPattern_OTF_filter_gaussian_noise_PIL)
+                SIMdata_OTF_filter = self.OTF_Filter(SinPattern * image,self.OTF)
+                SIMdata_OTF_filter_gaussian_noise = self.add_gaussian_noise(SIMdata_OTF_filter)
+                SIMdata_OTF_filter_gaussian_noise = SIMdata_OTF_filter_gaussian_noise.float()
+                SIMdata_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(SIMdata_OTF_filter_gaussian_noise).convert('RGB')
+                SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
 
-        return SinPatternPIL_Image
+                SinPattern = SinPattern.float()
+                SinPattern_PIL = transforms.ToPILImage()(SinPattern).convert('RGB')
+                SinPatternPIL_Image.append(SinPattern_PIL)
+
+        return SIMdata_PIL_Image + SinPatternPIL_Image
 
     def GridGenerate(self, image_size):
         '''
@@ -224,18 +229,58 @@ class SinusoidalPattern(Operations.Operation):
         # OTF = torch.where(f < f0,torch.ones_like(f),torch.zeros_like(f))
         return OTF
 
-# if __name__ == '__main__':
-    # directory_txt_file="D:\DataSet\DIV2K\DIV2K_valid_LR_unknown\\test\\valid.txt"
-    # SourceFileDirectory="D:\DataSet\DIV2K\DIV2K_valid_LR_unknown\\test\\valid"
-    # # p = Pipeline.Pipeline_revise(source_directory=SourceFileDirectory,txt_directory=directory_txt_file)
-    #
-    # p = Pipeline.Pipeline_revise(source_directory=SourceFileDirectory)
-    #
-    #
-    # AddSinusoidalPattern(p,probability=1)
-    #
-    # with open(directory_txt_file,'w') as f:
-    #     for augmentor_image in p.augmentor_images:
-    #         directories_of_images=os.path.basename(augmentor_image.image_path)
-    #         f.write(augmentor_image.output_directory + '\t' + directories_of_images +'\n')
-    # p.process()
+    def psf_form(self, OTF):
+
+        OTF = OTF.squeeze()
+        Numpy_OTF = OTF.numpy()
+        psf = np.fft.ifftshift(np.fft.ifft2(Numpy_OTF, axes=(0, 1)),axes=(0, 1))
+        psf = abs(psf)
+        psf_Numpy = psf / psf.max()
+        psf_tensor = torch.from_numpy(psf_Numpy)
+        half_size_of_psf = int(psf.shape[0] / 2)
+        half_row_of_psf = psf_tensor[half_size_of_psf]
+        # a = half_row_of_psf < 1e-2
+        id = torch.arange(0, half_row_of_psf.nelement())[half_row_of_psf.gt(1e-2)]
+        psf_crop = psf_tensor[id[0]:id[-1] + 1, id[0]:id[-1] + 1]
+        return psf_crop
+
+class psf_conv_generator(nn.Module):
+    def __init__(self,kernal):
+        super(psf_conv_generator, self).__init__()
+        self.kernal = kernal
+    def forward(self, HR_image,device):
+        HR_image = HR_image.squeeze()
+        kernal_size = self.kernal.size()[0]
+        dim_of_HR_image = len(HR_image.size())
+        if dim_of_HR_image == 4:
+            min_batch = HR_image.size()[0]
+            channels = HR_image.size()[1]
+        elif dim_of_HR_image == 3:
+            channels = HR_image.size()[0]
+            HR_image = HR_image.view(1,channels,HR_image.size()[1],HR_image.size()[2])
+        else:
+            channels = 1
+            HR_image = HR_image.view(1, 1, HR_image.size()[0], HR_image.size()[1])
+        out_channel = channels
+        kernel = torch.FloatTensor(self.kernal).expand(out_channel, channels, kernal_size, kernal_size)
+        kernel.to(device)
+        # self.weight = nn.Parameter(data=kernel, requires_grad=False)
+        return F.conv2d(HR_image,kernel.to(device), stride= 1, padding= int((kernal_size-1)/2) )
+
+if __name__ == '__main__':
+    source_directory = 'D:\DataSet\DIV2K\subimage\getImage.jpg'
+    HR_image = Image.open(source_directory)
+    temp = SinusoidalPattern(probability = 1)
+    OTF = temp.OTF
+    psf = temp.psf_form(OTF)
+    HR_image = transforms.ToTensor()(HR_image.convert('L'))
+    psf_conv_instance = psf_conv_generator(psf)
+    LR_image = psf_conv_instance(HR_image)
+    LR_image = LR_image.squeeze()
+    LR_image = LR_image/LR_image.max()
+    LR_image_PIL = transforms.ToPILImage()(LR_image)
+    LR_image_PIL.show()
+    # psf_crop_PIL = transforms.ToPILImage()(psf_crop)
+    # psf_crop_PIL.show()
+
+

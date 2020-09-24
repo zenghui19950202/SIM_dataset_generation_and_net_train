@@ -7,12 +7,8 @@
 
 import torch
 import math
-import Pipeline_SIMdata_pattern_pairs
 from torchvision import transforms
-from fuctions_for_generate_pattern import SinusoidalPattern
-from Augmentor.Operations import Crop
-from configparser import ConfigParser
-import random
+from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 
 
 class random_sepckle_pattern(SinusoidalPattern):

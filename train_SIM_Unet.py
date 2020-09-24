@@ -1,24 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # author：zenghui time:2020/6/16
-
+from models import *
+from utils import *
 import torch
 import torch.optim as optim
 import torch.nn as nn
-import numpy as np
 import random
 import time
-from SpeckleSIMDataLoad import SIM_data
+from utils.SpeckleSIMDataLoad import SIM_data_load
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
-import resnet_backbone_net as res_SIMnet
 import os
-from Networks_Unet_GAN import UnetGenerator
 from early_stopping.pytorchtools import EarlyStopping
-from configparser import ConfigParser
-import math
-from Unet_NC2020 import UNet
-
 
 def try_gpu():
     """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
@@ -167,33 +161,26 @@ class MSE_loss(nn.Module):
 
 
 if __name__ == '__main__':
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "5, 6"
-    config = ConfigParser()
-    config.read('configuration.ini')
-    SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
-
-    # train_directory_file = os.path.dirname(SourceFileDirectory)+'/train.txt'
-    # valid_directory_file = os.path.dirname(SourceFileDirectory)+'/valid.txt'
-    train_directory_file = SourceFileDirectory + '/SIMdata_SR_train.txt'
-    valid_directory_file = SourceFileDirectory + '/SIMdata_SR_valid.txt'
-
-    MAX_EVALS = config.getint('hyparameter', 'MAX_EVALS')  # the number of hyparameters sets
-    data_generate_mode = config.get('data', 'data_generate_mode')
-    data_input_mode = config.get('data', 'data_input_mode')
-    net_type = config.get('net', 'net_type')
-    LR_highway_type = config.get('LR_highway', 'LR_highway_type')
-    data_num = config.getint('SIM_data_generation', 'data_num')  # the number of raw SIM images
-    num_epochs = config.getint('hyparameter', 'num_epochs')  # the number of raw SIM images
+    train_net_parameters = load_configuration_parameters.load_train_net_config_paras()
+    train_directory_file = train_net_parameters['train_directory_file']
+    valid_directory_file = train_net_parameters['valid_directory_file']
+    data_generate_mode = train_net_parameters['data_generate_mode']
+    net_type = train_net_parameters['net_type']
+    data_input_mode = train_net_parameters['data_input_mode']
+    LR_highway_type = train_net_parameters['LR_highway_type']
+    MAX_EVALS = train_net_parameters['MAX_EVALS']
+    num_epochs = train_net_parameters['num_epochs']
+    data_num = train_net_parameters['data_num']
 
     param_grid = {
-        'learning_rate': list(np.logspace(-5, -4, base=10, num=10)),
-        'batch_size': [32, 48],
+        'learning_rate': [0.000168],
+        'batch_size': [1],
         'weight_decay': [1e-5],
         'Dropout_ratio': [1]
     }
 
-    SIM_train_dataset = SIM_data(train_directory_file, data_mode=data_generate_mode)
-    SIM_valid_dataset = SIM_data(valid_directory_file, data_mode=data_generate_mode)
+    SIM_train_dataset = SIM_data_load(train_directory_file, data_mode=data_generate_mode)
+    SIM_valid_dataset = SIM_data_load(valid_directory_file, data_mode=data_generate_mode)
 
     random.seed(50)  # 设置随机种子
     min_loss = 1e5
@@ -229,15 +216,15 @@ if __name__ == '__main__':
 
         num_raw_SIMdata, output_nc, num_downs = data_num, 1, 5
         if net_type == 'Unet':
-            SIMnet = UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=LR_highway_type,
+            SIMnet = Networks_Unet_GAN.UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=LR_highway_type,
                                    input_mode=data_input_mode, use_dropout=False)
         elif net_type == 'resnet':
-            SIMnet = res_SIMnet._resnet('resnet34', res_SIMnet.BasicBlock, [1, 1, 1, 1],
+            SIMnet = resnet_backbone_net._resnet('resnet34', resnet_backbone_net.BasicBlock, [1, 1, 1, 1],
                                         input_mode=data_input_mode, LR_highway=LR_highway_type,
                                         input_nc=num_raw_SIMdata,
                                         pretrained=False, progress=False, )
         elif net_type == 'wide_Unet':
-            SIMnet = UNet(num_raw_SIMdata, 1, input_mode=data_input_mode, LR_highway=LR_highway_type)
+            SIMnet = Unet_NC2020.UNet(num_raw_SIMdata, 1, input_mode=data_input_mode, LR_highway=LR_highway_type)
         else:
             raise Exception("error net type")
         SIMnet.apply(init_weights)

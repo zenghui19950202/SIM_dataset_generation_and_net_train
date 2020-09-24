@@ -18,11 +18,17 @@ import math
 class Pipeline_speckle(Pipeline):
 
     def __init__(self, source_directory=None, output_directory="output", save_format=None):
-       super(Pipeline_speckle,self).__init__(source_directory=source_directory, output_directory=output_directory, save_format=save_format)
-       self.source_directory=source_directory
-
-       self.train_txt_directory = os.path.dirname(self.source_directory) + '/SIMdata_SR_train.txt'
-       self.valid_txt_directory = os.path.dirname(self.source_directory) + '/SIMdata_SR_valid.txt'
+        super(Pipeline_speckle, self).__init__(source_directory=source_directory, output_directory=output_directory,
+                                               save_format=save_format)
+        self.source_directory = source_directory
+        if os.path.basename(output_directory) == 'speckle_SIM_data_train' or os.path.basename(output_directory) == 'speckle_SIM_data_valid':
+            self.train_txt_directory = os.path.dirname(self.source_directory) + '/speckle_SIM_data_train.txt'
+            self.valid_txt_directory = os.path.dirname(self.source_directory) + '/speckle_SIM_data_valid.txt'
+        elif os.path.basename(output_directory) == 'SIMdata_SR_train'or os.path.basename(output_directory) == 'SIMdata_SR_valid':
+            self.train_txt_directory = os.path.dirname(self.source_directory) + '/SIMdata_SR_train.txt'
+            self.valid_txt_directory = os.path.dirname(self.source_directory) + '/SIMdata_SR_valid.txt'
+        else:
+            raise Exception("error Input output directory")
 
 
     def sample(self, n, multi_threaded=True,data_type = 'train',data_num = 16):
@@ -72,9 +78,11 @@ class Pipeline_speckle(Pipeline):
             if self.data_type == 'train':
                 txt_directory=self.train_txt_directory
                 save_directory = os.path.join(augmentor_image.output_directory, image_name)
-            else:
+            elif self.data_type == 'valid':
                 txt_directory = self.valid_txt_directory
                 save_directory = os.path.join(augmentor_image.output_directory, image_name)
+            else:
+                raise Exception("error data_type")
             f = open(txt_directory,'a')
             augmentor_image.new_name = image_name
             f.write(save_directory  + '\t' + str(self.data_num) + '\t' + image_format + '\n')
@@ -156,13 +164,15 @@ class Pipeline_speckle(Pipeline):
             if r <= operation.probability:
                 if operation.__class__ == Augmentor.Operations.Crop:
                     Crop_image_is_background = True
-                    while Crop_image_is_background:
+                    count_num = 0
+                    while Crop_image_is_background and count_num < 10:
                         temp_images = operation.perform_operation(images)
                         tensor_temp_images = transforms.ToTensor()(temp_images[0].convert('L'))
                         entropy = self.get_entropy(tensor_temp_images.squeeze())
                         if entropy > 5.5:
                             Crop_image_is_background = False
                             images = temp_images
+                        count_num += 1
                 else:
                     images = operation.perform_operation(images)
 
@@ -183,12 +193,19 @@ class Pipeline_speckle(Pipeline):
                                     +"_LR_"\
                                     +'.'+ image_format
                         images[i].save(os.path.join(augmentor_image.output_directory, save_name))
-                    else:
+                    elif i>= 2 and i<= self.data_num + 1:
                         save_name = file_name\
                                     +"_Speckle_SIM_data(" \
                                     +str(i - 1) \
                                     +")_" \
                                     +'.' + image_format
+                        images[i].save(os.path.join(augmentor_image.output_directory, save_name))
+                    else:
+                        save_name = file_name \
+                                    + "_Speckle_SIM_pattern(" \
+                                    + str(i - 10) \
+                                    + ")_" \
+                                    + '.' + image_format
                         images[i].save(os.path.join(augmentor_image.output_directory, save_name))
 
             except IOError as e:

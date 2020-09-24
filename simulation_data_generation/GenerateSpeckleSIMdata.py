@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # author：zenghui time:2020/6/10
-
+from utils import *
 import torch
 import math
-import Pipeline_speckle
+from simulation_data_generation import Pipeline_speckle
 from torchvision import transforms
-from fuctions_for_generate_pattern import SinusoidalPattern
+from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 from Augmentor.Operations import Crop
 from configparser import ConfigParser
 import random
@@ -16,9 +16,7 @@ class SpecklePattern(SinusoidalPattern):
 
     def _init_(self,directory_txt_file=None):
        self.directory_txt_file = directory_txt_file
-       super(SpecklePattern,self)._init_(self, probability=1, NumPhase=3, Magnification=150, PixelSizeOfCCD=6800,
-                                      EmWaveLength=635, NA=0.9, SNR=500,
-                                      image_size=256)
+       super(SpecklePattern,self)._init_(self, probability=1)
     def perform_operation(self, images):
         """
         Crop the passed :attr:`images` by percentage area, returning the crop as an
@@ -96,30 +94,19 @@ class SpecklePattern(SinusoidalPattern):
 
 
 if __name__ == '__main__':
+    data_generation_parameters = load_configuration_parameters.load_data_generation_config_paras()
+    train_directory = data_generation_parameters['SourceFileDirectory']  + '/train'
+    valid_directory = data_generation_parameters['SourceFileDirectory']  + '/valid'
 
-    config = ConfigParser()
-    config.read('configuration.ini')
-    config.sections()
-    SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
-    sample_num = config.getint('SIM_data_generation', 'sample_num')
-    image_size = config.getint('SIM_data_generation', 'image_size')
-    data_ratio = config.getfloat('SIM_data_generation', 'data_ratio')
-    # SourceFileDirectory = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/test2"
+    data_num = data_generation_parameters['data_num']
+    image_size = data_generation_parameters['image_size']
 
-    # p = Pipeline_speckle.Pipeline_speckle(source_directory=SourceFileDirectory)
-    # p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
-    # p.add_operation(SpecklePattern(probability=1,image_size=image_size))
-    # p.sample(20,multi_threaded=True,data_ratio=1)
-
-    train_directory = SourceFileDirectory + '/train'
-    valid_directory = SourceFileDirectory + '/valid'
-
-    p = Pipeline_speckle.Pipeline_speckle(source_directory=train_directory,output_directory="train")
+    p = Pipeline_speckle.Pipeline_speckle(source_directory=train_directory, output_directory="../speckle_SIM_data_train")
     p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
-    p.add_operation(SpecklePattern(probability=1,image_size=image_size))
-    p.sample(3200,multi_threaded=True,data_type='train_data',data_num = 16)
+    p.add_operation(SpecklePattern(probability=1))
+    p.sample(1,multi_threaded=True,data_type='train',data_num = 16)
 
-    p = Pipeline_speckle.Pipeline_speckle(source_directory=valid_directory,output_directory="valid")
+    p = Pipeline_speckle.Pipeline_speckle(source_directory=valid_directory, output_directory="../speckle_SIM_data_valid")
     p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
-    p.add_operation(SpecklePattern(probability=1,image_size=image_size))
-    p.sample(400,multi_threaded=True,data_type='valid_data',data_num = 16)
+    p.add_operation(SpecklePattern(probability=1))
+    p.sample(1,multi_threaded=True,data_type='valid',data_num = 16)

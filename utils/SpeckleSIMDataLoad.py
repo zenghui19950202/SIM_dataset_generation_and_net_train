@@ -13,10 +13,11 @@ import numpy as np
 
 # from Add_Sinpattern_OTF_noise_ByAugumentor import SinusoidalPattern
 
-class SIM_data(data.Dataset):
+class SIM_data_load(data.Dataset):
     def __init__(self,
                  directory_data_file,
                  data_mode='SIM_and_LR_images'
+                 ,normalize=True
                  ):
         # data_dict=[]
         # with open(directory_data_file,'r',encoding='utf8') as json_file:
@@ -28,12 +29,16 @@ class SIM_data(data.Dataset):
             self.content = txtFile.readlines()
 
         self.data_mode = data_mode
+        self.normalize = normalize
 
     def __getitem__(self, index):
         txt_line = self.content[index]
         SIM_data_directory = txt_line.split()[0]
         image_number = int(txt_line.split()[1])
         image_format = txt_line.split()[2]
+        self.SIM_data_directory = SIM_data_directory
+        self.image_number = image_number
+        self.image_format = image_format
 
         LR_image_directoty = SIM_data_directory \
                              + "_LR_" \
@@ -52,10 +57,16 @@ class SIM_data(data.Dataset):
             image_size = [HR_image_PIL.size[0], HR_image_PIL.size[1]]
         elif len(HR_image_PIL.size) == 3:
             image_size = [HR_image_PIL.size[1], HR_image_PIL.size[2]]
+        self.image_size = image_size
 
-        transform = transforms.Compose(
-            [transforms.ToTensor(),  # 函数接受PIL Image或numpy.ndarray，将其先由HWC转置为CHW格式，再转为float后每个像素除以255.
-             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        if self.normalize == True:
+            transform = transforms.Compose(
+                [transforms.ToTensor(),  # 函数接受PIL Image或numpy.ndarray，将其先由HWC转置为CHW格式，再转为float后每个像素除以255.
+                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        else:
+            transform = transforms.Compose(
+                [transforms.ToTensor()])
+        self.transform = transform
 
         HR_normalized_image_tensor = transform(HR_image_PIL)[0, :, :]
         LR_normalized_image_tensor = transform(LR_image_PIL)[0, :, :]
@@ -90,13 +101,38 @@ class SIM_data(data.Dataset):
         return len(self.content)
 
 
+class SIM_pattern_load(SIM_data_load):
+    def __getitem__(self, index):
+        super(SIM_pattern_load, self).__getitem__(index)
+
+        SIM_pattern_data = torch.zeros(self.image_number , self.image_size[0], self.image_size[1])
+
+        for i in range(self.image_number):
+            SIM_data_image_directoty = self.SIM_data_directory \
+                                       + "_Speckle_SIM_pattern(" \
+                                       + str(i + 1) \
+                                       + ")_" \
+                                       + '.' + self.image_format
+            SIM_pattern_PIL = Image.open(SIM_data_image_directoty)
+            SIM_pattern_PIL = SIM_pattern_PIL.convert('RGB')
+            SIM_pattern_normalized_image_tensor = self.transform(SIM_pattern_PIL)
+            SIM_pattern_data[i, :, :] = SIM_pattern_normalized_image_tensor[0, :, :]
+            # SIM_image_data[i, :, :] = torch.zeros_like(SIMdata_normalized_image_tensor[0,:,:])
+
+        return SIM_pattern_data
+
+    def __len__(self):
+        return len(self.content)
+
+
 if __name__ == '__main__':
     directory_json_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown\\test\directories_of_images.json"
-    directory_txt_file = 'D:\DataSet\DIV2K\DIV2K/train.txt'
-    SIM_dataset = SIM_data(directory_txt_file)
-    a, b = SIM_dataset[0]
+    directory_txt_file = 'D:\DataSet\DIV2K\DIV2K/SIMdata_SR_train.txt'
+    SIM_dataset = SIM_pattern_load(directory_txt_file)
+    a = SIM_dataset[0]
     a = a * 0.5 + 0.5
     a_PIL = transforms.ToPILImage()(a[0, :, :]).convert('RGB')
-    b = b * 0.5 + 0.5
-    b_PIL = transforms.ToPILImage()(b[:, :, 0]).convert('RGB')
+    a_PIL.show()
+    # b = b * 0.5 + 0.5
+    # b_PIL = transforms.ToPILImage()(b[:, :, 0]).convert('RGB')
     SIM_data_loader = DataLoader(SIM_dataset, batch_size=4, shuffle=True)

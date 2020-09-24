@@ -6,9 +6,9 @@ import torch
 import math
 import Pipeline_SIMdata_pattern_pairs
 from torchvision import transforms
-from fuctions_for_generate_pattern import SinusoidalPattern
+from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 from Augmentor.Operations import Crop
-from configparser import ConfigParser
+from utils import *
 import random
 
 class sinusoidal_SIMdata_pattern_pair(SinusoidalPattern):
@@ -76,29 +76,26 @@ class sinusoidal_SIMdata_pattern_pair(SinusoidalPattern):
 
 if __name__ == '__main__':
 
-    config = ConfigParser()
-    config.read('configuration.ini')
-    config.sections()
-    SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
-    sample_num = config.getint('SIM_data_generation', 'sample_num')
-    image_size = config.getint('SIM_data_generation', 'image_size')
-    data_ratio = config.getfloat('SIM_data_generation', 'data_ratio')
-    # SourceFileDirectory = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/test2"
+    train_net_parameters = load_configuration_parameters.load_train_net_config_paras()
+    train_directory_file = train_net_parameters['train_directory_file']
+    valid_directory_file = train_net_parameters['valid_directory_file']
+    data_generate_mode = train_net_parameters['data_generate_mode']
+    net_type = train_net_parameters['net_type']
+    data_input_mode = train_net_parameters['data_input_mode']
+    LR_highway_type = train_net_parameters['LR_highway_type']
+    MAX_EVALS = train_net_parameters['MAX_EVALS']
+    num_epochs = train_net_parameters['num_epochs']
+    data_num = train_net_parameters['data_num']
+    image_size = train_net_parameters['image_size']
 
-    # p = Pipeline_speckle.Pipeline_speckle(source_directory=SourceFileDirectory)
-    # p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
-    # p.add_operation(SinusoidalPattern(probability=1,image_size=image_size))
-    # p.sample(20,multi_threaded=True,data_ratio=1)
-
-    train_directory = SourceFileDirectory + '/train'
-    valid_directory = SourceFileDirectory + '/valid'
-
-    p = Pipeline_SIMdata_pattern_pairs.Pipeline_SIMdata_pattern_pairs(source_directory=train_directory,output_directory="train")
+    p = Pipeline_SIMdata_pattern_pairs.Pipeline_SIMdata_pattern_pairs(source_directory=train_directory_file, output_directory="SIMdata_pattern_pair", data_type='train')
     p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
     p.add_operation(sinusoidal_SIMdata_pattern_pair(probability=1,image_size=image_size))
-    p.sample(10,multi_threaded=True,data_ratio=1)
+    p.sample(10,multi_threaded=True,data_type='train',data_num=data_num)
 
-    # p = Pipeline_speckle.Pipeline_speckle(source_directory=valid_directory,output_directory="valid")
-    # p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
-    # p.add_operation(SinusoidalPattern(probability=1,image_size=image_size))
-    # p.sample(400,multi_threaded=True,data_ratio=0)
+    p = Pipeline_SIMdata_pattern_pairs.Pipeline_SIMdata_pattern_pairs(source_directory=valid_directory_file, output_directory="SIMdata_pattern_pair", data_type='valid')
+    p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
+    p.add_operation(sinusoidal_SIMdata_pattern_pair(probability=1,image_size=image_size))
+    p.sample(10,multi_threaded=True,data_type='valid',data_num=data_num)
+
+

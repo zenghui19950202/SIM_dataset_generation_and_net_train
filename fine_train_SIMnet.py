@@ -8,14 +8,14 @@ import torch.nn as nn
 # import numpy as np
 # import random
 import time
-from SpeckleSIMDataLoad import SIM_data
+from utils.SpeckleSIMDataLoad import SIM_data_load
 from torch.utils.data import DataLoader
 # from Unet_NC2020 import UNet
 import os
 from tensorboardX import SummaryWriter
-from Networks_Unet_GAN import UnetGenerator
+from models.Networks_Unet_GAN import UnetGenerator
 from early_stopping.pytorchtools import EarlyStopping
-import resnet_backbone_net as res_SIMnet
+from models import resnet_backbone_net as res_SIMnet
 import math
 from configparser import ConfigParser
 
@@ -166,8 +166,8 @@ if __name__ == '__main__':
     net_type = config.get('net', 'net_type')
     LR_highway_type = config.get('LR_highway', 'LR_highway_type')
 
-    SIM_train_dataset = SIM_data(train_directory_file, data_mode = data_generate_mode)
-    SIM_valid_dataset = SIM_data(valid_directory_file, data_mode = data_generate_mode)
+    SIM_train_dataset = SIM_data_load(train_directory_file, data_mode = data_generate_mode)
+    SIM_valid_dataset = SIM_data_load(valid_directory_file, data_mode = data_generate_mode)
 
     num_epochs =2
 
