@@ -131,5 +131,5 @@ class UNet(nn.Module):
         return y
 
 if __name__ == '__main__':
-    SIM_Unet = UNet(9,1,input_mode = 'input_all_images',LR_highway = 'concat')
-    summary(SIM_Unet, input_size=(10, 256, 256))
+    SIM_Unet = UNet(2,1,input_mode = 'input_all_images',LR_highway = 'concat')
+    summary(SIM_Unet, input_size=(3, 256, 256))

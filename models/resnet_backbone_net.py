@@ -170,6 +170,7 @@ class ResNet(nn.Module):
         self.final_conv = conv1x1(self.inplanes,1)
         self.LR_highway_conv = conv1x1(2,1)
         self.Tanh = nn.Tanh()
+        self.leaky_relu = torch.nn.LeakyReLU(negative_slope=0.01, inplace=False)
 
 
         for m in self.modules():
@@ -236,6 +237,8 @@ class ResNet(nn.Module):
         out = self.layer3(out)
         out = self.layer4(out)
         out = self.final_conv(out)
+        # out = self.leaky_relu(out)
+        # out = self.relu(out)
         if self.LR_highway == 'concat':
             out = self.relu(out)
             out = torch.cat((out,LR_image),1)

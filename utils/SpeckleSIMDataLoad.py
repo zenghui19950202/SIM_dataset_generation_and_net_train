@@ -128,6 +128,7 @@ class SIM_pattern_load(SIM_data_load):
 if __name__ == '__main__':
     directory_json_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown\\test\directories_of_images.json"
     directory_txt_file = 'D:\DataSet\DIV2K\DIV2K/SIMdata_SR_train.txt'
+
     SIM_dataset = SIM_pattern_load(directory_txt_file)
     a = SIM_dataset[0]
     a = a * 0.5 + 0.5
