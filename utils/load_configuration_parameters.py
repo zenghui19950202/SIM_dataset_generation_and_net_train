@@ -12,6 +12,7 @@ def load_train_net_config_paras():
         config.read('configuration.ini')
     else:
         raise Exception('directory of configuration.ini error')
+
     train_net_parameters = {}
     train_net_parameters['train_directory_file'] = config.get('image_file', 'SourceFileDirectory') + '/SIMdata_SR_train.txt'
     train_net_parameters['valid_directory_file'] = config.get('image_file', 'SourceFileDirectory') + '/SIMdata_SR_valid.txt'
@@ -24,6 +25,7 @@ def load_train_net_config_paras():
     train_net_parameters['data_num'] = config.getint('SIM_data_generation', 'data_num')  # the number of raw SIM images
     train_net_parameters['num_epochs'] = config.getint('hyparameter', 'num_epochs')
     train_net_parameters['image_size'] = config.getint('SIM_data_generation', 'image_size')
+    train_net_parameters['opt_over'] = config.get('net', 'opt_over')
 
 
     return train_net_parameters

@@ -6,13 +6,13 @@ import torch
 import math
 import numpy as np
 from Augmentor import Operations
-from torchvision import transforms
 import random
 from configparser import ConfigParser
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
 from PIL import Image
+from utils import *
 
 
 # def AddSinusoidalPattern(pipeline, probability=1):
@@ -45,19 +45,27 @@ class SinusoidalPattern(Operations.Operation):
          performed when it is invoked in the pipeline.
         :type probability: Float
         """
+        data_generation_parameters = load_configuration_parameters.load_data_generation_config_paras()
         config = ConfigParser()
         config.read('../configuration.ini')
-        SourceFileDirectory = config.get('image_file', 'SourceFileDirectory')
-        self.Magnification = config.getint('SIM_data_generation', 'Magnification')
-        self.PixelSizeOfCCD = config.getint('SIM_data_generation', 'PixelSizeOfCCD')
-        self.EmWaveLength = config.getint('SIM_data_generation', 'EmWaveLength')
-        self.NA = config.getfloat('SIM_data_generation', 'NA')
-        self.NumPhase = config.getint('SIM_data_generation', 'NumPhase')
-        self.SNR = config.getint('SIM_data_generation', 'SNR')
-        self.image_size = config.getint('SIM_data_generation', 'image_size')
-        self.pattern_frequency_ratio = config.getfloat('SIM_data_generation', 'pattern_frequency_ratio')
+        SourceFileDirectory = data_generation_parameters['SourceFileDirectory']
+        self.Magnification = data_generation_parameters['Magnification']
+        self.PixelSizeOfCCD = data_generation_parameters['PixelSizeOfCCD']
+        self.EmWaveLength = data_generation_parameters['EmWaveLength']
+        self.NA = data_generation_parameters['NA']
+        self.NumPhase = data_generation_parameters['NumPhase']
+        self.SNR = data_generation_parameters['SNR']
+        self.image_size = data_generation_parameters['image_size']
+        self.pattern_frequency_ratio = data_generation_parameters['pattern_frequency_ratio']
+        self.data_sum = data_generation_parameters['data_num']
+
+        self.PixelSize = self.PixelSizeOfCCD / self.Magnification
+        self.delta_x = self.PixelSize  # xy方向的空域像素间隔，单位m
+        self.delta_y = self.PixelSize
+        self.delta_fx = 1 / self.image_size / self.delta_x  # xy方向的频域像素间隔，单位m ^ -1
+        self.delta_fy = 1 / self.image_size / self.delta_y
         self.xx, self.yy, fx, fy = self.GridGenerate(self.image_size)
-        self.f0 = 2 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
+        self.f_cutoff = 2 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
         self.f = pow((fx ** 2 + fy ** 2), 1 / 2)  # The spatial freqneucy fr=sqrt( fx^2 + fy^2 )
 
         self.OTF = self.OTF_form(fc_ratio=1)
@@ -105,28 +113,60 @@ class SinusoidalPattern(Operations.Operation):
         SinPatternPIL_Image = []
         SIMdata_PIL_Image = []
         random_initial_direction_phase = random.random() * 2 * math.pi
-        for i in range(3):
-            theta = i * 2 / 3 * math.pi + random_initial_direction_phase
-            SpatialFrequencyX = -self.pattern_frequency_ratio * 1 / resolution * math.sin(theta)  # 0.8倍的极限频率条纹 pattern_frequency_ratio，可调
-            SpatialFrequencyY = -self.pattern_frequency_ratio * 1 / resolution * math.cos(theta)
-            random_initial_phase = random.random() * 2 * math.pi
-            for j in range(self.NumPhase):
-                phase = j * 2 / self.NumPhase * math.pi + random_initial_phase
+
+        if self.data_sum ==9:
+            for i in range(3):
+                theta = i * 2 / 3 * math.pi + random_initial_direction_phase
+                SpatialFrequencyX = -self.pattern_frequency_ratio * 1 / resolution * math.sin(theta)  # 0.8倍的极限频率条纹 pattern_frequency_ratio，可调
+                SpatialFrequencyY = -self.pattern_frequency_ratio * 1 / resolution * math.cos(theta)
+                random_initial_phase = 1/4 * math.pi
+                # random_initial_phase = random.random() * 2 * math.pi
+                for j in range(self.NumPhase):
+                    phase = j * 2 / self.NumPhase * math.pi + random_initial_phase
+                    SinPattern = (torch.cos(
+                        phase + 2 * math.pi * (SpatialFrequencyX * self.xx + SpatialFrequencyY * self.yy)) + 1) / 2
+                    SIMdata_OTF_filter = self.OTF_Filter(SinPattern * image,self.OTF)
+                    SIMdata_OTF_filter_gaussian_noise = self.add_gaussian_noise(SIMdata_OTF_filter)
+                    SIMdata_OTF_filter_gaussian_noise = SIMdata_OTF_filter_gaussian_noise.float()
+                    SIMdata_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(SIMdata_OTF_filter_gaussian_noise).convert('RGB')
+                    SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
+
+                    SinPattern = SinPattern.float()
+                    SinPattern_PIL = transforms.ToPILImage()(SinPattern).convert('RGB')
+                    SinPatternPIL_Image.append(SinPattern_PIL)
+        elif self.data_sum ==3:
+
+            resolution = 0.61 * self.EmWaveLength / self.NA
+            # xx, yy, _, _ = self.GridGenerate(image=torch.rand(7, 7))
+            # xx, yy, fx, fy = self.GridGenerate(image)
+            SinPatternPIL_Image = []
+            SIMdata_PIL_Image = []
+            random_initial_direction_phase = random.random() * 2 * math.pi
+            for i in range(3):
+                theta = i * 2 / 3 * math.pi + random_initial_direction_phase
+                SpatialFrequencyX = -self.pattern_frequency_ratio * 1 / resolution * math.sin(
+                    theta)  # 0.8倍的极限频率条纹 pattern_frequency_ratio，可调
+                SpatialFrequencyY = -self.pattern_frequency_ratio * 1 / resolution * math.cos(theta)
+                random_initial_phase = random.random() * 2 * math.pi
+                phase = random_initial_phase
                 SinPattern = (torch.cos(
                     phase + 2 * math.pi * (SpatialFrequencyX * self.xx + SpatialFrequencyY * self.yy)) + 1) / 2
-                SIMdata_OTF_filter = self.OTF_Filter(SinPattern * image,self.OTF)
+                SIMdata_OTF_filter = self.OTF_Filter(SinPattern * image, self.OTF)
                 SIMdata_OTF_filter_gaussian_noise = self.add_gaussian_noise(SIMdata_OTF_filter)
                 SIMdata_OTF_filter_gaussian_noise = SIMdata_OTF_filter_gaussian_noise.float()
-                SIMdata_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(SIMdata_OTF_filter_gaussian_noise).convert('RGB')
+                SIMdata_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(
+                    SIMdata_OTF_filter_gaussian_noise).convert('RGB')
                 SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
 
                 SinPattern = SinPattern.float()
                 SinPattern_PIL = transforms.ToPILImage()(SinPattern).convert('RGB')
                 SinPatternPIL_Image.append(SinPattern_PIL)
+        else:
+            raise Exception('error data_num  input, expected 4 or 9')
 
         return SIMdata_PIL_Image + SinPatternPIL_Image
 
-    def GridGenerate(self, image_size):
+    def GridGenerate(self, image_size, grid_mode = 'real'):
         '''
         :param Magnification: the magnification of the Microscope
         :param PixelSize: the PixleSize of the sCMOS or CCD
@@ -135,11 +175,6 @@ class SinusoidalPattern(Operations.Operation):
         :return:
         '''
         y, x = image_size, image_size
-        PixelSize = self.PixelSizeOfCCD / self.Magnification
-        delta_x = PixelSize  # xy方向的空域像素间隔，单位m
-        delta_y = PixelSize
-        delta_fx = 1 / x / delta_x  # xy方向的频域像素间隔，单位m ^ -1
-        delta_fy = 1 / y / delta_y
         if x % 2 == 1:
             if y % 2 == 1:
                 xx, yy = torch.meshgrid(torch.arange(-(x - 1) / 2, (x + 1) / 2, 1),
@@ -154,10 +189,18 @@ class SinusoidalPattern(Operations.Operation):
             else:
                 xx, yy = torch.meshgrid(torch.arange(-x / 2, x / 2, 1),
                                         torch.arange(-y / 2, y / 2, 1))  # 空域x方向坐标为偶数，y方向坐标为偶数的情况
-        fx = xx * delta_fx
-        fy = yy * delta_fy
-        xx = xx * delta_x
-        yy = yy * delta_y
+
+        if grid_mode == 'real':
+            fx = xx * self.delta_fx
+            fy = yy * self.delta_fy
+            xx = xx * self.delta_x
+            yy = yy * self.delta_y
+        elif grid_mode == 'pixel':
+            fx = xx * 1.0 / self.image_size
+            fy = yy * 1.0 / self.image_size
+        else:
+            raise Exception('error grid mode')
+
         return xx, yy, fx, fy
 
     def OTF_Filter(self, image, OTF):
@@ -222,7 +265,7 @@ class SinusoidalPattern(Operations.Operation):
         return [LR_image_PIL]
 
     def OTF_form(self, fc_ratio=1):
-        f0 = fc_ratio * self.f0
+        f0 = fc_ratio * self.f_cutoff
         f = self.f
         OTF = torch.where(f < f0, (2 / math.pi) * (torch.acos(f / f0) - (f / f0) * (
             pow((1 - (self.f / f0) ** 2), 0.5))), torch.Tensor([0]))  # Caculate the OTF support
@@ -243,6 +286,7 @@ class SinusoidalPattern(Operations.Operation):
         id = torch.arange(0, half_row_of_psf.nelement())[half_row_of_psf.gt(1e-2)]
         psf_crop = psf_tensor[id[0]:id[-1] + 1, id[0]:id[-1] + 1]
         return psf_crop
+
 
 class psf_conv_generator(nn.Module):
     def __init__(self,kernal):
@@ -266,27 +310,6 @@ class psf_conv_generator(nn.Module):
         kernel.to(device)
         # self.weight = nn.Parameter(data=kernel, requires_grad=False)
         return F.conv2d(HR_image,kernel.to(device), stride= 1, padding= int((kernal_size-1)/2),groups = out_channel)
-
-def save_image_tensor2pillow(input_tensor: torch.Tensor, filename):
-    """
-    将tensor保存为pillow
-    :param input_tensor: 要保存的tensor
-    :param filename: 保存的文件名
-    """
-    assert (len(input_tensor.shape) == 4 and input_tensor.shape[0] == 1)
-    # 复制一份
-    input_tensor = input_tensor.clone().detach()
-    # 到cpu
-    input_tensor = input_tensor.to(torch.device('cpu'))
-    # 反归一化
-    # input_tensor = unnormalize(input_tensor)
-    # 去掉批次维度
-    input_tensor = input_tensor.squeeze()
-    # 从[0,1]转化为[0,255]，再从CHW转为HWC，最后转为numpy
-    input_tensor = input_tensor.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).type(torch.uint8).numpy()
-    # 转成pillow
-    im = Image.fromarray(input_tensor)
-    im.save(filename)
 
 if __name__ == '__main__':
     source_directory = 'D:\DataSet\DIV2K\subimage\getImage.jpg'

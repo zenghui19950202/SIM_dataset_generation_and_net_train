@@ -203,7 +203,7 @@ class Pipeline_speckle(Pipeline):
                     else:
                         save_name = file_name \
                                     + "_Speckle_SIM_pattern(" \
-                                    + str(i - 10) \
+                                    + str(i - self.data_num-1) \
                                     + ")_" \
                                     + '.' + image_format
                         images[i].save(os.path.join(augmentor_image.output_directory, save_name))

@@ -7,6 +7,8 @@ import numpy as np
 from PIL import Image
 import PIL
 import numpy as np
+from torchvision import transforms
+import os
 
 import matplotlib.pyplot as plt
 
@@ -230,3 +232,69 @@ def optimize(optimizer_type, parameters, closure, LR, num_iter):
             optimizer.step()
     else:
         assert False
+
+def plot_single_tensor_image(image):
+    image = image.squeeze()
+    out_SR_np = image.detach().cpu().numpy()
+    out_SR_np = out_SR_np.reshape(1, out_SR_np.shape[0], -1)
+    out_SR_np = np.abs(out_SR_np)
+    out_SR_np = out_SR_np / out_SR_np.max()
+    plot_image_grid([out_SR_np], factor=13, nrow=1)
+
+def save_image_tensor2pillow(input_tensor: torch.Tensor, file_name):
+    """
+    将tensor保存为pillow
+    :param input_tensor: 要保存的tensor
+    :param filename: 保存的文件名
+    """
+    assert (len(input_tensor.shape) == 4 and input_tensor.shape[0] == 1)
+    input_tensor = input_tensor.clone().detach()
+    input_tensor = input_tensor.to(torch.device('cpu'))
+    input_tensor = input_tensor.squeeze()
+    input_tensor = input_tensor/input_tensor.max()
+    input_PIL = transforms.ToPILImage()(input_tensor)
+
+    if not os.path.exists(file_name):
+        try:
+            os.makedirs(file_name)
+        except IOError:
+            print("Insufficient rights to read or write output directory (%s)"
+                  % file_name)
+    save_path = os.path.join(file_name, 'SR_image.png')
+    input_PIL.save(save_path)
+
+
+def get_params(opt_over, net, pattern_parameters, downsampler=None,weight_decay = 1e-5):
+    '''Returns parameters that we want to optimize over.
+
+    Args:
+        opt_over: comma separated list, e.g. "net,input" or "net"
+        net: network
+        net_input: torch.Tensor that stores input `z`
+    '''
+    opt_over_list = opt_over.split(',')
+
+    weight_p, bias_p = [], []
+    for name, p in net.named_parameters():
+        if 'bias' in name:
+            bias_p += [p]
+        else:
+            weight_p += [p]
+
+    params = []
+
+    for opt in opt_over_list:
+
+        if opt == 'net':
+            params += [{'params': weight_p, 'weight_decay': weight_decay}] + [{'params': bias_p, 'weight_decay': 0}]
+        elif opt == 'down':
+            assert downsampler is not None
+            params = [x for x in downsampler.parameters()]
+        elif opt == 'pattern_parameters':
+            for pattern_parameter in pattern_parameters:
+                pattern_parameter.requires_grad = True
+            params += [{'params': pattern_parameters, 'weight_decay': weight_decay}]
+        else:
+            assert False, 'what is it?'
+
+    return params

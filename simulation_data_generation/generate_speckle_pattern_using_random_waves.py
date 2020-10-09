@@ -92,4 +92,5 @@ if __name__ == '__main__':
     phase_pattern_imag_sum = torch.sum(phase_pattern_imag, dim=2)
     random_sepckle_pattern = torch.pow(torch.pow(phase_pattern_real_sum,2) + torch.pow(phase_pattern_imag_sum,2),1/2)
     random_sepckle_pattern_PIL = transforms.ToPILImage()(random_sepckle_pattern).convert('RGB')
+    random_sepckle_pattern_PIL.save('D:\DataSet\DIV2K\speckle/speckle_pattern.png')
     random_sepckle_pattern_PIL.show()
