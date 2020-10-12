@@ -3,6 +3,7 @@
 # author：zenghui time:2020/9/9
 from utils import *
 from models import *
+from self_supervised_learning_sr import *
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -39,11 +40,11 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     OTF = temp.OTF
     psf = temp.psf_form(OTF)
 
-    psf_conv = funcs.psf_conv_generator(psf)
+    psf_conv = funcs.psf_conv_generator(psf,device)
 
-    OTF_reconstruction = temp.OTF_form(fc_ratio=1 + 0.8)
+    OTF_reconstruction = temp.OTF_form(fc_ratio=1 + temp.pattern_frequency_ratio)
     psf_reconstruction = temp.psf_form(OTF_reconstruction)
-    psf_reconstruction_conv = funcs.psf_conv_generator(psf_reconstruction)
+    psf_reconstruction_conv = funcs.psf_conv_generator(psf_reconstruction,device)
 
     noise = net_input.detach().clone()
     reg_noise_std = 0.03
@@ -52,9 +53,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     best_SR = torch.zeros(image_size, dtype=torch.float32, device=device)
     end_flag = 0
 
-    even_illumination = torch.ones([1, 1, *image_size], dtype=torch.float32, device=device)
-
-    input_id = 1
+    input_id = 0
     data_id = 0
     for SIM_data, SIM_pattern in zip(SIM_data_dataloader, SIM_pattern_loader):
         SIM_raw_data = SIM_data[0]
@@ -62,11 +61,8 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
             break
     data_id += 1
 
-    # for SIM_pattern in SIM_pattern_loader:
-    #     pass
-
-    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data)
-    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern)
+    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2])
+    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,2])
 
     psf_radius = math.floor(psf.size()[0] / 2)
 
@@ -76,11 +72,14 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     SIM_pattern, estimated_pattern_parameters = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels(
         input_SIM_raw_data)
 
-    experimental_parameters = SinusoidalPattern(probability=1)
-    xx, yy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
+    # experimental_parameters = SinusoidalPattern(probability=1)
+    # xx, yy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
 
     delta_pattern_params = torch.zeros_like(estimated_pattern_parameters)
-    optimize_parameters = common_utils.get_params(opt_over, net, delta_pattern_params, downsampler=None,
+
+    fusion_param = torch.tensor([1.0],device = device)
+
+    optimize_parameters = common_utils.get_params(opt_over, net,fusion_param, delta_pattern_params, downsampler=None,
                                                   weight_decay=weight_decay)
     optimizer = optim.Adam(optimize_parameters, lr=lr)
 
@@ -107,22 +106,20 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         input_SIM_pattern = input_SIM_pattern.to(device)
         HR_LR = HR_LR.to(device)
         # temp = net(SIM_raw_data)
+        low_freq_image = HR_LR[:, :, :, 1]
+        # high_freq_image = net(net_input_noise)
+        # high_freq_image = abs(high_freq_image)
+        # SR_image = freq_images_fusion.image_fusion(high_freq_image, low_freq_image, fusion_param,psf_conv,psf_reconstruction_conv)
+        #
+        # tv_loss = 1e-7 * loss_functions.tv_loss_calculate(high_freq_image)
+
         SR_image = net(net_input_noise)
         SR_image = abs(SR_image)
-
-        # Relu = nn.ReLU()
-        # SR_image = Relu(SR_image)
-
         tv_loss = 1e-7 * loss_functions.tv_loss_calculate(SR_image)
-        # minus_loss = minus_loss_calculate(SR_image)
         SR_image = SR_image.squeeze()
 
-        # SIM_pattern = torch.cat([SIM_pattern,even_illumination],1)
-        # SIM_raw_data_estimated = positive_propagate(SR_image, SIM_pattern,psf_conv,device)
-        # mse_loss = criterion(SIM_raw_data, SIM_raw_data_estimated)
-
-        SIM_raw_data_estimated = positive_propagate(SR_image, input_SIM_pattern, psf_conv, device)
-        SR_image_high_freq_filtered = positive_propagate(SR_image, 1, psf_reconstruction_conv, device)
+        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image, input_SIM_pattern, psf_conv)
+        SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image, 1, psf_reconstruction_conv)
         mse_loss = criterion(input_SIM_raw_data, SIM_raw_data_estimated, mask)
 
         # LR = HR_LR[:,:,:,1]
@@ -180,12 +177,6 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
             common_utils.plot_single_tensor_image(SR_image_high_freq_filtered)
 
     return train_loss, best_SR
-
-
-def positive_propagate(SR_image, SIM_pattern, psf_conv, device):
-    SIM_raw_data_estimated = psf_conv(SR_image * SIM_pattern, device)
-    return SIM_raw_data_estimated
-
 
 def init_weights(m):
     if type(m) == nn.Linear or type(m) == nn.Conv2d:

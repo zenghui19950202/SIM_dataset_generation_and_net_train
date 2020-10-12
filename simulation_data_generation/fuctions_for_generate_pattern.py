@@ -310,11 +310,11 @@ class SinusoidalPattern(Operations.Operation):
 
 
 class psf_conv_generator(nn.Module):
-    def __init__(self, kernal):
+    def __init__(self, kernal, device):
         super(psf_conv_generator, self).__init__()
-        self.kernal = kernal
+        self.kernal = kernal.to(device)
 
-    def forward(self, HR_image, device):
+    def forward(self, HR_image):
         HR_image = HR_image.squeeze()
         kernal_size = self.kernal.size()[0]
         dim_of_HR_image = len(HR_image.size())
@@ -328,10 +328,9 @@ class psf_conv_generator(nn.Module):
             channels = 1
             HR_image = HR_image.view(1, 1, HR_image.size()[0], HR_image.size()[1])
         out_channel = channels
-        kernel = torch.FloatTensor(self.kernal).expand(out_channel, 1, kernal_size, kernal_size)
-        kernel.to(device)
+        kernel = self.kernal.expand(out_channel, 1, kernal_size, kernal_size)
         # self.weight = nn.Parameter(data=kernel, requires_grad=False)
-        return F.conv2d(HR_image, kernel.to(device), stride=1, padding=int((kernal_size - 1) / 2), groups=out_channel)
+        return F.conv2d(HR_image, kernel, stride=1, padding=int((kernal_size - 1) / 2), groups=out_channel)
 
 
 if __name__ == '__main__':

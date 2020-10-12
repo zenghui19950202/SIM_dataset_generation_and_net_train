@@ -265,7 +265,7 @@ def save_image_tensor2pillow(input_tensor: torch.Tensor, file_name):
     input_PIL.save(save_path)
 
 
-def get_params(opt_over, net, pattern_parameters, downsampler=None,weight_decay = 1e-5):
+def get_params(opt_over, net, fusion_param, pattern_parameters, downsampler=None,weight_decay = 1e-5):
     '''Returns parameters that we want to optimize over.
 
     Args:
@@ -285,7 +285,6 @@ def get_params(opt_over, net, pattern_parameters, downsampler=None,weight_decay 
     params = []
 
     for opt in opt_over_list:
-
         if opt == 'net':
             params += [{'params': weight_p, 'weight_decay': weight_decay}] + [{'params': bias_p, 'weight_decay': 0}]
         elif opt == 'down':
@@ -294,6 +293,9 @@ def get_params(opt_over, net, pattern_parameters, downsampler=None,weight_decay 
         elif opt == 'pattern_parameters':
             pattern_parameters.requires_grad = True
             params += [{'params': pattern_parameters, 'weight_decay': weight_decay}]
+        elif opt == 'fusion':
+            fusion_param.requires_grad = True
+            params += [{'params': fusion_param, 'weight_decay': weight_decay}]
         else:
             assert False, 'what is it?'
 
