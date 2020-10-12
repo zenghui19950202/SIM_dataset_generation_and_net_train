@@ -33,7 +33,8 @@ class SinusoidalPattern(Operations.Operation):
     """
     This class is used to add Sinusoidal Pattern on images.
     """
-    def __init__(self,probability):  # unit: nm
+
+    def __init__(self, probability):  # unit: nm
         """
         As well as the always required :attr:`probability` parameter, the
         constructor requires a :attr:`percentage_area` to control the area
@@ -81,7 +82,7 @@ class SinusoidalPattern(Operations.Operation):
         :return: The transformed image(s) as a list of object(s) of type
          PIL.Image.
         """
-        crop_size=self.image_size
+        crop_size = self.image_size
         augmented_images = []
         for image in images:
             h, w = image.size
@@ -114,27 +115,26 @@ class SinusoidalPattern(Operations.Operation):
         SIMdata_PIL_Image = []
         random_initial_direction_phase = random.random() * 2 * math.pi
 
-        if self.data_sum ==9:
+        if self.data_sum == 9:
             for i in range(3):
+                modulation_factor = random.random() / 2 + 0.5
                 theta = i * 2 / 3 * math.pi + random_initial_direction_phase
-                SpatialFrequencyX = -self.pattern_frequency_ratio * 1 / resolution * math.sin(theta)  # 0.8倍的极限频率条纹 pattern_frequency_ratio，可调
+                SpatialFrequencyX = -self.pattern_frequency_ratio * 1 / resolution * math.sin(
+                    theta)  # 0.8倍的极限频率条纹 pattern_frequency_ratio，可调
                 SpatialFrequencyY = -self.pattern_frequency_ratio * 1 / resolution * math.cos(theta)
-                random_initial_phase = 1/4 * math.pi
+                random_initial_phase = 1 / 4 * math.pi
                 # random_initial_phase = random.random() * 2 * math.pi
                 for j in range(self.NumPhase):
                     phase = j * 2 / self.NumPhase * math.pi + random_initial_phase
-                    SinPattern = (torch.cos(
-                        phase + 2 * math.pi * (SpatialFrequencyX * self.xx + SpatialFrequencyY * self.yy)) + 1) / 2
-                    SIMdata_OTF_filter = self.OTF_Filter(SinPattern * image,self.OTF)
-                    SIMdata_OTF_filter_gaussian_noise = self.add_gaussian_noise(SIMdata_OTF_filter)
-                    SIMdata_OTF_filter_gaussian_noise = SIMdata_OTF_filter_gaussian_noise.float()
-                    SIMdata_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(SIMdata_OTF_filter_gaussian_noise).convert('RGB')
-                    SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
+                    SIMdata_OTF_filter_gaussian_noise_PIL, SinPattern_PIL = self.generate_single_SIM_data(image,
+                                                                                                          SpatialFrequencyX,
+                                                                                                          SpatialFrequencyY,
+                                                                                                          modulation_factor,
+                                                                                                          phase)
 
-                    SinPattern = SinPattern.float()
-                    SinPattern_PIL = transforms.ToPILImage()(SinPattern).convert('RGB')
+                    SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
                     SinPatternPIL_Image.append(SinPattern_PIL)
-        elif self.data_sum ==3:
+        elif self.data_sum == 3:
 
             resolution = 0.61 * self.EmWaveLength / self.NA
             # xx, yy, _, _ = self.GridGenerate(image=torch.rand(7, 7))
@@ -143,30 +143,51 @@ class SinusoidalPattern(Operations.Operation):
             SIMdata_PIL_Image = []
             random_initial_direction_phase = random.random() * 2 * math.pi
             for i in range(3):
+                modulation_factor = random.random() / 2 + 0.5
+                theta = i * 2 / 3 * math.pi + random_initial_direction_phase
+                phase = random.random() * 2 * math.pi
+                SpatialFrequencyX = -self.pattern_frequency_ratio * 1 / resolution * math.sin(
+                    theta)  # 0.8倍的极限频率条纹 pattern_frequency_ratio，可调
+                SpatialFrequencyY = -self.pattern_frequency_ratio * 1 / resolution * math.cos(theta)
+                SIMdata_OTF_filter_gaussian_noise_PIL, SinPattern_PIL = self.generate_single_SIM_data(image,
+                                                                                                      SpatialFrequencyX,
+                                                                                                      SpatialFrequencyY,
+                                                                                                      modulation_factor,
+                                                                                                      phase)
+                SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
+                SinPatternPIL_Image.append(SinPattern_PIL)
+        elif self.data_sum == 6:
+            for i in range(3):
+                modulation_factor = random.random() / 2 + 0.5
                 theta = i * 2 / 3 * math.pi + random_initial_direction_phase
                 SpatialFrequencyX = -self.pattern_frequency_ratio * 1 / resolution * math.sin(
                     theta)  # 0.8倍的极限频率条纹 pattern_frequency_ratio，可调
                 SpatialFrequencyY = -self.pattern_frequency_ratio * 1 / resolution * math.cos(theta)
                 random_initial_phase = random.random() * 2 * math.pi
-                phase = random_initial_phase
-                SinPattern = (torch.cos(
-                    phase + 2 * math.pi * (SpatialFrequencyX * self.xx + SpatialFrequencyY * self.yy)) + 1) / 2
-                SIMdata_OTF_filter = self.OTF_Filter(SinPattern * image, self.OTF)
-                SIMdata_OTF_filter_gaussian_noise = self.add_gaussian_noise(SIMdata_OTF_filter)
-                SIMdata_OTF_filter_gaussian_noise = SIMdata_OTF_filter_gaussian_noise.float()
-                SIMdata_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(
-                    SIMdata_OTF_filter_gaussian_noise).convert('RGB')
-                SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
-
-                SinPattern = SinPattern.float()
-                SinPattern_PIL = transforms.ToPILImage()(SinPattern).convert('RGB')
-                SinPatternPIL_Image.append(SinPattern_PIL)
+                for j in range(2):
+                    phase = j * math.pi + random_initial_phase
+                    SIMdata_OTF_filter_gaussian_noise_PIL,SinPattern_PIL = self.generate_single_SIM_data(image,SpatialFrequencyX,SpatialFrequencyY,modulation_factor,phase)
+                    SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
+                    SinPatternPIL_Image.append(SinPattern_PIL)
         else:
-            raise Exception('error data_num  input, expected 4 or 9')
+            raise Exception('error data_num  input, expected 3 、6 or 9')
 
         return SIMdata_PIL_Image + SinPatternPIL_Image
 
-    def GridGenerate(self, image_size, grid_mode = 'real'):
+    def generate_single_SIM_data(self,image,SpatialFrequencyX,SpatialFrequencyY,modulation_factor,phase):
+        SinPattern = (torch.cos(
+            phase + 2 * math.pi * (
+                    SpatialFrequencyX * self.xx + SpatialFrequencyY * self.yy)) * modulation_factor + 1) / 2
+        SIMdata_OTF_filter = self.OTF_Filter(SinPattern * image, self.OTF)
+        SIMdata_OTF_filter_gaussian_noise = self.add_gaussian_noise(SIMdata_OTF_filter)
+        SIMdata_OTF_filter_gaussian_noise = SIMdata_OTF_filter_gaussian_noise.float()
+        SIMdata_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(
+            SIMdata_OTF_filter_gaussian_noise).convert('RGB')
+        SinPattern = SinPattern.float()
+        SinPattern_PIL = transforms.ToPILImage()(SinPattern).convert('RGB')
+
+        return SIMdata_OTF_filter_gaussian_noise_PIL, SinPattern_PIL
+    def GridGenerate(self, image_size, grid_mode='real'):
         '''
         :param Magnification: the magnification of the Microscope
         :param PixelSize: the PixleSize of the sCMOS or CCD
@@ -227,7 +248,7 @@ class SinusoidalPattern(Operations.Operation):
         Filter_NumpyImage = np.fft.ifft2(np.fft.ifftshift(FilterFFT_NumpyImage, axes=(0, 1)), axes=(0, 1))
         Filter_NumpyImage = abs(Filter_NumpyImage)
 
-        Filter_NumpyImage = Filter_NumpyImage/Filter_NumpyImage.max()*256
+        Filter_NumpyImage = Filter_NumpyImage / Filter_NumpyImage.max() * 256
 
         filter_tensor_Image = torch.from_numpy(Filter_NumpyImage)
         return filter_tensor_Image
@@ -236,7 +257,7 @@ class SinusoidalPattern(Operations.Operation):
         # if len(TensorImage)==3:
         #      TensorImage = TensorImage.permute(1, 2, 0) # transope for matplot
         # signal_intensity_of_image = (tensor_Image ** 2).mean()  # The mean intensity of signal
-        signal_std_of_image = (tensor_Image ** 2).std() # The std intensity of signal
+        signal_std_of_image = (tensor_Image ** 2).std()  # The std intensity of signal
         noise_std_of_image = signal_std_of_image / self.SNR
         noise_of_image = torch.zeros_like(tensor_Image)
         # std_of_noise = noise_std_of_image ** (0.5)
@@ -249,8 +270,8 @@ class SinusoidalPattern(Operations.Operation):
 
     def SR_image_generator(self, TensorImage):
 
-        OTF = self.OTF_form(fc_ratio=1.9)
-        SR_image_tensor= self.OTF_Filter(TensorImage,OTF)
+        OTF = self.OTF_form(fc_ratio= self.pattern_frequency_ratio + 1)
+        SR_image_tensor = self.OTF_Filter(TensorImage, OTF)
         SR_image_tensor_normalized = SR_image_tensor / SR_image_tensor.max()
         SR_image_tensor_normalized = SR_image_tensor_normalized.float()
         SR_image_PIL = transforms.ToPILImage()(SR_image_tensor_normalized).convert('RGB')
@@ -259,7 +280,7 @@ class SinusoidalPattern(Operations.Operation):
     def LR_image_generator(self, TensorImage):
 
         OTF = self.OTF_form(fc_ratio=1)
-        LR_image_tensor= self.add_gaussian_noise(self.OTF_Filter(TensorImage,OTF))
+        LR_image_tensor = self.add_gaussian_noise(self.OTF_Filter(TensorImage, OTF))
         LR_image_tensor = LR_image_tensor.float()
         LR_image_PIL = transforms.ToPILImage()(LR_image_tensor).convert('RGB')
         return [LR_image_PIL]
@@ -276,7 +297,7 @@ class SinusoidalPattern(Operations.Operation):
 
         OTF = OTF.squeeze()
         Numpy_OTF = OTF.numpy()
-        psf = np.fft.ifftshift(np.fft.ifft2(Numpy_OTF, axes=(0, 1)),axes=(0, 1))
+        psf = np.fft.ifftshift(np.fft.ifft2(Numpy_OTF, axes=(0, 1)), axes=(0, 1))
         psf = abs(psf)
         psf_Numpy = psf / psf.max()
         psf_tensor = torch.from_numpy(psf_Numpy)
@@ -289,10 +310,11 @@ class SinusoidalPattern(Operations.Operation):
 
 
 class psf_conv_generator(nn.Module):
-    def __init__(self,kernal):
+    def __init__(self, kernal):
         super(psf_conv_generator, self).__init__()
         self.kernal = kernal
-    def forward(self, HR_image,device):
+
+    def forward(self, HR_image, device):
         HR_image = HR_image.squeeze()
         kernal_size = self.kernal.size()[0]
         dim_of_HR_image = len(HR_image.size())
@@ -301,7 +323,7 @@ class psf_conv_generator(nn.Module):
             channels = HR_image.size()[1]
         elif dim_of_HR_image == 3:
             channels = HR_image.size()[0]
-            HR_image = HR_image.view(1,channels,HR_image.size()[1],HR_image.size()[2])
+            HR_image = HR_image.view(1, channels, HR_image.size()[1], HR_image.size()[2])
         else:
             channels = 1
             HR_image = HR_image.view(1, 1, HR_image.size()[0], HR_image.size()[1])
@@ -309,22 +331,21 @@ class psf_conv_generator(nn.Module):
         kernel = torch.FloatTensor(self.kernal).expand(out_channel, 1, kernal_size, kernal_size)
         kernel.to(device)
         # self.weight = nn.Parameter(data=kernel, requires_grad=False)
-        return F.conv2d(HR_image,kernel.to(device), stride= 1, padding= int((kernal_size-1)/2),groups = out_channel)
+        return F.conv2d(HR_image, kernel.to(device), stride=1, padding=int((kernal_size - 1) / 2), groups=out_channel)
+
 
 if __name__ == '__main__':
     source_directory = 'D:\DataSet\DIV2K\subimage\getImage.jpg'
     HR_image = Image.open(source_directory)
-    temp = SinusoidalPattern(probability = 1)
+    temp = SinusoidalPattern(probability=1)
     OTF = temp.OTF
     psf = temp.psf_form(OTF)
     HR_image = transforms.ToTensor()(HR_image.convert('L'))
     psf_conv_instance = psf_conv_generator(psf)
     LR_image = psf_conv_instance(HR_image)
     LR_image = LR_image.squeeze()
-    LR_image = LR_image/LR_image.max()
+    LR_image = LR_image / LR_image.max()
     LR_image_PIL = transforms.ToPILImage()(LR_image)
     LR_image_PIL.show()
     # psf_crop_PIL = transforms.ToPILImage()(psf_crop)
     # psf_crop_PIL.show()
-
-

@@ -95,6 +95,8 @@ class SIM_data_load(data.Dataset):
         else:
             SIM_image_data = SIM_image_data.narrow(0, 0, image_number)
 
+        if self.image_number == 3:
+            SIM_image_data = torch.cat((SIM_image_data, LR_normalized_image_tensor.unsqueeze(0)), 0)
         return SIM_image_data, torch.stack((HR_normalized_image_tensor, LR_normalized_image_tensor), 2)
 
     def __len__(self):
@@ -118,7 +120,9 @@ class SIM_pattern_load(SIM_data_load):
             SIM_pattern_normalized_image_tensor = self.transform(SIM_pattern_PIL)
             SIM_pattern_data[i, :, :] = SIM_pattern_normalized_image_tensor[0, :, :]
             # SIM_image_data[i, :, :] = torch.zeros_like(SIMdata_normalized_image_tensor[0,:,:])
-
+        if self.image_number == 3:
+            even_illunimation = torch.ones(1,self.image_size[0], self.image_size[1])
+            SIM_pattern_data = torch.cat((SIM_pattern_data, even_illunimation), 0)
         return SIM_pattern_data
 
     def __len__(self):

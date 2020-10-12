@@ -9,65 +9,36 @@ import torch.nn as nn
 import random
 import time
 import copy
+import math
 from torch.utils.data import DataLoader
-from utils.SpeckleSIMDataLoad import SIM_pattern_load
-from utils.SpeckleSIMDataLoad import SIM_data_load
+# from utils.SpeckleSIMDataLoad import SIM_pattern_load
+# from utils.SpeckleSIMDataLoad import SIM_data_load
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
-from utils import common_utils
+# from utils import common_utils
 from self_supervised_learning_sr import estimate_SIM_pattern
+from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 # import self_supervised_learning_sr.estimate_SIM_pattern
 import numpy as np
-
-
-def tv_loss_calculate(x, beta=0.5):
-    '''Calculates TV loss for an image `x`.
-
-    Args:
-        x: image, torch.Variable of torch.Tensor
-        beta: See https://arxiv.org/abs/1412.0035 (fig. 2) to see effect of `beta`
-    '''
-    dh = torch.pow(x[:, :, :, 1:] - x[:, :, :, :-1], 2)
-    dw = torch.pow(x[:, :, 1:, :] - x[:, :, :-1, :], 2)
-
-    return torch.sum(torch.pow(dh[:, :, :-1] + dw[:, :, :, :-1], beta))
-
-
-def minus_loss_calculate(x):
-    minus_x = torch.mean(abs(x) - x)
-
-    return minus_x
 
 
 def try_gpu():
     """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
     if torch.cuda.is_available():
-        device = torch.device('cuda:4')
+        device = torch.device('cuda:3')
     else:
         device = torch.device('cpu')
     return device
 
 
 def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_epochs, device, lr=None,
-          weight_decay=1e-5 , opt_over = 'net'):
+          weight_decay=1e-5, opt_over='net'):
     """Train and evaluate a model with CPU or GPU."""
-
     print('training on', device)
-
     net = net.to(device)
-
-    optimize_parameters = common_utils.get_params(opt_over, net, net_input, downsampler=None,weight_decay = weight_decay)
-
-    optimizer = optim.Adam(optimize_parameters, lr=lr)
-
-    # optimizer = optim.Adam(net.parameters(), lr=lr,weight_decay=0)
-
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.9, patience=100,
-                                                           verbose=False, threshold=0.0001, threshold_mode='rel',
-                                                           cooldown=0, min_lr=1e-5, eps=1e-08)
-
     temp = funcs.SinusoidalPattern(probability=1)
     OTF = temp.OTF
     psf = temp.psf_form(OTF)
+
     psf_conv = funcs.psf_conv_generator(psf)
 
     OTF_reconstruction = temp.OTF_form(fc_ratio=1 + 0.8)
@@ -83,9 +54,39 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
 
     even_illumination = torch.ones([1, 1, *image_size], dtype=torch.float32, device=device)
 
-    for SIM_data in SIM_data_dataloader:
+    input_id = 1
+    data_id = 0
+    for SIM_data, SIM_pattern in zip(SIM_data_dataloader, SIM_pattern_loader):
         SIM_raw_data = SIM_data[0]
-        SIM_pattern, estimated_pattern_parameters = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels(SIM_raw_data)
+        if data_id == input_id:
+            break
+    data_id += 1
+
+    # for SIM_pattern in SIM_pattern_loader:
+    #     pass
+
+    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data)
+    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern)
+
+    psf_radius = math.floor(psf.size()[0] / 2)
+
+    mask = torch.zeros_like(input_SIM_raw_data, device=device)
+    mask[:, :, psf_radius:-psf_radius, psf_radius:-psf_radius] = 1
+
+    SIM_pattern, estimated_pattern_parameters = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels(
+        input_SIM_raw_data)
+
+    experimental_parameters = SinusoidalPattern(probability=1)
+    xx, yy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
+
+    delta_pattern_params = torch.zeros_like(estimated_pattern_parameters)
+    optimize_parameters = common_utils.get_params(opt_over, net, delta_pattern_params, downsampler=None,
+                                                  weight_decay=weight_decay)
+    optimizer = optim.Adam(optimize_parameters, lr=lr)
+
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.9, patience=100,
+                                                           verbose=False, threshold=0.0001, threshold_mode='rel',
+                                                           cooldown=0, min_lr=1e-5, eps=1e-08)
 
     for epoch in range(num_epochs):
         net.train()  # Switch to training mode
@@ -94,6 +95,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         net_input_noise = net_input + (noise.normal_() * reg_noise_std)
         net_input_noise = net_input_noise.to(device)
 
+        # SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(SIM_raw_data.shape,estimated_pattern_parameters,delta_pattern_params,xx,yy)
         # for SIM_data, _ in zip(SIM_data_loader, SIM_pattern_loader):
         optimizer.zero_grad()
         # SIM_raw_data = SIM_data[0]
@@ -101,6 +103,8 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         HR_LR = SIM_data[1]
         SIM_raw_data = SIM_raw_data.to(device)
         SIM_pattern = SIM_pattern.to(device)
+        input_SIM_raw_data = input_SIM_raw_data.to(device)
+        input_SIM_pattern = input_SIM_pattern.to(device)
         HR_LR = HR_LR.to(device)
         # temp = net(SIM_raw_data)
         SR_image = net(net_input_noise)
@@ -109,7 +113,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         # Relu = nn.ReLU()
         # SR_image = Relu(SR_image)
 
-        tv_loss = 1e-7 * tv_loss_calculate(SR_image)
+        tv_loss = 1e-7 * loss_functions.tv_loss_calculate(SR_image)
         # minus_loss = minus_loss_calculate(SR_image)
         SR_image = SR_image.squeeze()
 
@@ -117,9 +121,9 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         # SIM_raw_data_estimated = positive_propagate(SR_image, SIM_pattern,psf_conv,device)
         # mse_loss = criterion(SIM_raw_data, SIM_raw_data_estimated)
 
-        SIM_raw_data_estimated = positive_propagate(SR_image, SIM_pattern, psf_conv, device)
+        SIM_raw_data_estimated = positive_propagate(SR_image, input_SIM_pattern, psf_conv, device)
         SR_image_high_freq_filtered = positive_propagate(SR_image, 1, psf_reconstruction_conv, device)
-        mse_loss = criterion(SIM_raw_data[:, 0:9, :, :], SIM_raw_data_estimated[:, 0:9, :, :])
+        mse_loss = criterion(input_SIM_raw_data, SIM_raw_data_estimated, mask)
 
         # LR = HR_LR[:,:,:,1]
         # LR_estimated = positive_propagate(SR_image, 1, psf_conv,device)
@@ -188,24 +192,6 @@ def init_weights(m):
         torch.nn.init.xavier_uniform_(m.weight)
 
 
-class MSE_loss(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, pattern, pattern_gt):
-        num_of_channels = pattern.size()[1]
-        if pattern.mean() < 1e-20:
-            pattern_nomalized = pattern / (pattern.mean() + 1e-19)
-        else:
-            pattern_nomalized = pattern / pattern.mean()
-        if pattern_gt.mean() < 1e-20:
-            pattern_gt_nomalized = pattern_gt / (pattern_gt.mean() + 1e-19)
-        else:
-            pattern_gt_nomalized = pattern_gt / pattern_gt.mean()
-        loss = torch.mean(torch.pow((pattern_nomalized - pattern_gt_nomalized), 2))
-        return loss * num_of_channels
-
-
 if __name__ == '__main__':
     train_net_parameters = load_configuration_parameters.load_train_net_config_paras()
     train_directory_file = train_net_parameters['train_directory_file']
@@ -228,9 +214,9 @@ if __name__ == '__main__':
         'Dropout_ratio': [1]
     }
 
-    SIM_data = SIM_data_load(train_directory_file, normalize=False, data_mode='only_raw_SIM_data')
-    # SIM_pattern = SIM_pattern_load(train_directory_file, normalize=False)
-    SIM_pattern = SIM_data_load(train_directory_file, normalize=False, data_mode='only_raw_SIM_data')
+    SIM_data = SpeckleSIMDataLoad.SIM_data_load(train_directory_file, normalize=False, data_mode='only_raw_SIM_data')
+    SIM_pattern = SpeckleSIMDataLoad.SIM_pattern_load(train_directory_file, normalize=False)
+    # SIM_pattern = SIM_data_load(train_directory_file, normalize=False, data_mode='only_raw_SIM_data')
 
     SIM_data_dataloader = DataLoader(SIM_data, batch_size=1)
     SIM_pattern_dataloader = DataLoader(SIM_pattern, batch_size=1)
@@ -247,7 +233,7 @@ if __name__ == '__main__':
 
     device = try_gpu()
     # criterion = nn.MSELoss()
-    criterion = MSE_loss()
+    criterion = loss_functions.MSE_loss()
     num_raw_SIMdata, output_nc, num_downs = 2, 1, 5
     # SIMnet = Unet_for_self_supervised.UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=False,input_mode = 'only_input_SIM_images', use_dropout=False)
     # SIMnet = Networks_Unet_GAN.UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=False,
@@ -260,7 +246,7 @@ if __name__ == '__main__':
     # SIMnet = nn.Sequential()
     start_time = time.time()
 
-    net_input = common_utils.get_noise(3, 'noise', (image_size, image_size))
+    net_input = common_utils.get_noise(3, 'noise', (image_size, image_size), var=1)
     net_input = net_input.to(device).detach()
 
     # net_input = SIM_data[0][1][:,:,0].squeeze()
@@ -268,7 +254,7 @@ if __name__ == '__main__':
     # net_input = net_input.view(1,2,256,256)
     # net_input.requires_grad = True
     train_loss, best_SR = train(SIMnet, SIM_data_dataloader, SIM_pattern_dataloader, net_input, criterion, num_epochs,
-                                device, lr, weight_decay,opt_over)
+                                device, lr, weight_decay, opt_over)
     best_SR = best_SR.reshape([1, 1, image_size, image_size])
     common_utils.save_image_tensor2pillow(best_SR, save_file_directory)
     # SIMnet.to('cpu')

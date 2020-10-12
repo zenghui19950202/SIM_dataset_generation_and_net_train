@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision
 import sys
-
+import time
 import numpy as np
 from PIL import Image
 import PIL
@@ -260,7 +260,8 @@ def save_image_tensor2pillow(input_tensor: torch.Tensor, file_name):
         except IOError:
             print("Insufficient rights to read or write output directory (%s)"
                   % file_name)
-    save_path = os.path.join(file_name, 'SR_image.png')
+
+    save_path = os.path.join(file_name, time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '_SR_image.png')
     input_PIL.save(save_path)
 
 
@@ -291,10 +292,29 @@ def get_params(opt_over, net, pattern_parameters, downsampler=None,weight_decay 
             assert downsampler is not None
             params = [x for x in downsampler.parameters()]
         elif opt == 'pattern_parameters':
-            for pattern_parameter in pattern_parameters:
-                pattern_parameter.requires_grad = True
+            pattern_parameters.requires_grad = True
             params += [{'params': pattern_parameters, 'weight_decay': weight_decay}]
         else:
             assert False, 'what is it?'
 
     return params
+
+def pick_input_data(SIM_data,data_id = None):
+    SIM_data_shape = SIM_data.shape
+    if data_id == None:
+        SIM_data_input = SIM_data
+    else:
+        input_num = len(data_id)
+        SIM_data_input = torch.zeros(SIM_data_shape[0],input_num,SIM_data_shape[2],SIM_data_shape[3])
+        for i in range(input_num):
+            SIM_data_input[:,i,:,:] = SIM_data[:,data_id[i],:,:]
+
+    return SIM_data_input
+
+if __name__ == '__main__':
+    source_directory = '/home/common/zenghui/test_for_self_9_frames_supervised_SR_net/seal/SR_image.png'
+    HR_image = Image.open(source_directory)
+    HR_image = transforms.ToTensor()(HR_image.convert('L'))
+    HR_image = HR_image.squeeze()
+    HR_image = HR_image.reshape([1, 1, HR_image.size()[0], HR_image.size()[1]])
+    save_image_tensor2pillow(HR_image, '/home/common/zenghui/test_for_self_9_frames_supervised_SR_net/seal/')
