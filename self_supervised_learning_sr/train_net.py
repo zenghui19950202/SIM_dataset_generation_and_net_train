@@ -12,12 +12,10 @@ import time
 import copy
 import math
 from torch.utils.data import DataLoader
-# from utils.SpeckleSIMDataLoad import SIM_pattern_load
-# from utils.SpeckleSIMDataLoad import SIM_data_load
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
-# from utils import common_utils
 from self_supervised_learning_sr import estimate_SIM_pattern
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
+
 # import self_supervised_learning_sr.estimate_SIM_pattern
 import numpy as np
 
@@ -61,8 +59,9 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
             break
     data_id += 1
 
-    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2])
-    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,2])
+    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2,3,6])
+    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,2,3,6])
+    # input_SIM_raw_data_normalized = processing_utils.pre_processing(input_SIM_raw_data)
 
     psf_radius = math.floor(psf.size()[0] / 2)
 
@@ -72,8 +71,8 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     SIM_pattern, estimated_pattern_parameters = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels(
         input_SIM_raw_data)
 
-    # experimental_parameters = SinusoidalPattern(probability=1)
-    # xx, yy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
+    experimental_parameters = SinusoidalPattern(probability=1)
+    xx, yy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
 
     delta_pattern_params = torch.zeros_like(estimated_pattern_parameters)
 
@@ -92,7 +91,10 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         n, start = 0, time.time()
         train_l_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
         net_input_noise = net_input + (noise.normal_() * reg_noise_std)
+        # net_input_noise = net_input
+        # net_input_noise = input_SIM_raw_data.to(device) + (noise.normal_() * reg_noise_std)
         net_input_noise = net_input_noise.to(device)
+
 
         # SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(SIM_raw_data.shape,estimated_pattern_parameters,delta_pattern_params,xx,yy)
         # for SIM_data, _ in zip(SIM_data_loader, SIM_pattern_loader):
@@ -104,6 +106,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         SIM_pattern = SIM_pattern.to(device)
         input_SIM_raw_data = input_SIM_raw_data.to(device)
         input_SIM_pattern = input_SIM_pattern.to(device)
+        # input_SIM_raw_data_normalized = input_SIM_raw_data_normalized.to(device)
         HR_LR = HR_LR.to(device)
         # temp = net(SIM_raw_data)
         low_freq_image = HR_LR[:, :, :, 1]
@@ -118,9 +121,9 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         tv_loss = 1e-7 * loss_functions.tv_loss_calculate(SR_image)
         SR_image = SR_image.squeeze()
 
-        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image, input_SIM_pattern, psf_conv)
+        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image, SIM_pattern, psf_conv)
         SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image, 1, psf_reconstruction_conv)
-        mse_loss = criterion(input_SIM_raw_data, SIM_raw_data_estimated, mask)
+        mse_loss = criterion(SIM_raw_data_estimated,input_SIM_raw_data, mask)
 
         # LR = HR_LR[:,:,:,1]
         # LR_estimated = positive_propagate(SR_image, 1, psf_conv,device)
@@ -164,7 +167,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
 
         if min_loss > train_loss:
             min_loss = train_loss
-            best_SR = SR_image_high_freq_filtered
+            best_SR = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
         if end_flag > 5:
             break
         if (epoch + 1) % 1000 == 0:
@@ -173,8 +176,9 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
             # # out_HR_np = out_HR_np/out_HR_np.max()
             # common_utils.plot_image_grid([out_HR_np[0, :, :].reshape(1, out_HR_np.shape[1], -1), out_HR_np[1, :, :].reshape(1, out_HR_np.shape[1], -1),
             #                               out_HR_np[2,:,:].reshape(1,out_HR_np.shape[1],-1)], factor=13, nrow=3)
+            SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
+            common_utils.plot_single_tensor_image(SR_image_high_freq_and_notch_filtered)
 
-            common_utils.plot_single_tensor_image(SR_image_high_freq_filtered)
 
     return train_loss, best_SR
 
@@ -237,7 +241,7 @@ if __name__ == '__main__':
     # SIMnet = nn.Sequential()
     start_time = time.time()
 
-    net_input = common_utils.get_noise(3, 'noise', (image_size, image_size), var=1)
+    net_input = common_utils.get_noise(num_raw_SIMdata+1, 'noise', (image_size, image_size), var=0.1)
     net_input = net_input.to(device).detach()
 
     # net_input = SIM_data[0][1][:,:,0].squeeze()

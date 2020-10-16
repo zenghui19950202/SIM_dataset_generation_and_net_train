@@ -65,9 +65,9 @@ class SinusoidalPattern(Operations.Operation):
         self.delta_y = self.PixelSize
         self.delta_fx = 1 / self.image_size / self.delta_x  # xy方向的频域像素间隔，单位m ^ -1
         self.delta_fy = 1 / self.image_size / self.delta_y
-        self.xx, self.yy, fx, fy = self.GridGenerate(self.image_size)
+        self.xx, self.yy, self.fx, self.fy = self.GridGenerate(self.image_size)
         self.f_cutoff = 2 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
-        self.f = pow((fx ** 2 + fy ** 2), 1 / 2)  # The spatial freqneucy fr=sqrt( fx^2 + fy^2 )
+        self.f = pow((self.fx ** 2 + self.fy ** 2), 1 / 2)  # The spatial freqneucy fr=sqrt( fx^2 + fy^2 )
 
         self.OTF = self.OTF_form(fc_ratio=1)
         Operations.Operation.__init__(self, probability)

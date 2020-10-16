@@ -45,3 +45,7 @@ def fine_adjust_SIM_pattern(SIM_data_shape,intial_estimated_pattern_params,delta
                     estimated_spatial_frequency_x * xx / image_size + estimated_spatial_frequency_y * yy / image_size)) + 1) / 2
 
     return  estimated_SIM_pattern
+
+if __name__ == '__main__':
+    pass
+    # SIM_pattern, estimated_pattern_parameters = estimate_SIM_pattern_and_parameters_of_multichannels(input_SIM_raw_data)

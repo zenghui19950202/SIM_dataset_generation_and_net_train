@@ -4,7 +4,7 @@
 
 import os
 
-libs = {"torchsummary" , "Augmentor "}
+libs = {"torchsummary" , "Augmentor ","opencv-python"}
 try:
     for lib in libs:
         os.system(" pip install " + lib)
