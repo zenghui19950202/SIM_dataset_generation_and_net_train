@@ -34,7 +34,7 @@ class SinusoidalPattern(Operations.Operation):
     This class is used to add Sinusoidal Pattern on images.
     """
 
-    def __init__(self, probability):  # unit: nm
+    def __init__(self, probability,image_size = None):  # unit: nm
         """
         As well as the always required :attr:`probability` parameter, the
         constructor requires a :attr:`percentage_area` to control the area
@@ -56,9 +56,12 @@ class SinusoidalPattern(Operations.Operation):
         self.NA = data_generation_parameters['NA']
         self.NumPhase = data_generation_parameters['NumPhase']
         self.SNR = data_generation_parameters['SNR']
-        self.image_size = data_generation_parameters['image_size']
+        if image_size == None:
+            self.image_size = data_generation_parameters['image_size']
+        else:
+            self.image_size = image_size
         self.pattern_frequency_ratio = data_generation_parameters['pattern_frequency_ratio']
-        self.data_sum = data_generation_parameters['data_num']
+        self.data_num = data_generation_parameters['data_num']
 
         self.PixelSize = self.PixelSizeOfCCD / self.Magnification
         self.delta_x = self.PixelSize  # xy方向的空域像素间隔，单位m
@@ -70,6 +73,7 @@ class SinusoidalPattern(Operations.Operation):
         self.f = pow((self.fx ** 2 + self.fy ** 2), 1 / 2)  # The spatial freqneucy fr=sqrt( fx^2 + fy^2 )
 
         self.OTF = self.OTF_form(fc_ratio=1)
+        self.CTF = self.CTF_form(fc_ratio=1)
         Operations.Operation.__init__(self, probability)
 
     def perform_operation(self, images):
@@ -115,7 +119,7 @@ class SinusoidalPattern(Operations.Operation):
         SIMdata_PIL_Image = []
         random_initial_direction_phase = random.random() * 2 * math.pi
 
-        if self.data_sum == 9:
+        if self.data_num == 9:
             for i in range(3):
                 modulation_factor = random.random() / 2 + 0.5
                 theta = i * 2 / 3 * math.pi + random_initial_direction_phase
@@ -134,7 +138,7 @@ class SinusoidalPattern(Operations.Operation):
 
                     SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
                     SinPatternPIL_Image.append(SinPattern_PIL)
-        elif self.data_sum == 3:
+        elif self.data_num == 3:
 
             resolution = 0.61 * self.EmWaveLength / self.NA
             # xx, yy, _, _ = self.GridGenerate(image=torch.rand(7, 7))
@@ -156,7 +160,7 @@ class SinusoidalPattern(Operations.Operation):
                                                                                                       phase)
                 SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
                 SinPatternPIL_Image.append(SinPattern_PIL)
-        elif self.data_sum == 6:
+        elif self.data_num == 6:
             for i in range(3):
                 modulation_factor = random.random() / 2 + 0.5
                 theta = i * 2 / 3 * math.pi + random_initial_direction_phase
@@ -293,6 +297,12 @@ class SinusoidalPattern(Operations.Operation):
         # OTF = torch.where(f < f0,torch.ones_like(f),torch.zeros_like(f))
         return OTF
 
+    def CTF_form(self,fc_ratio=1):
+        f0 = fc_ratio * self.f_cutoff / 2
+        f = self.f
+        CTF = torch.where(f < f0, torch.Tensor([1]), torch.Tensor([0]))
+        return CTF
+
     def psf_form(self, OTF):
 
         OTF = OTF.squeeze()
@@ -330,7 +340,7 @@ class psf_conv_generator(nn.Module):
         out_channel = channels
         kernel = self.kernal.expand(out_channel, 1, kernal_size, kernal_size)
         # self.weight = nn.Parameter(data=kernel, requires_grad=False)
-        return F.conv2d(HR_image, kernel, stride=1, padding=int((kernal_size - 1) / 2), groups=out_channel)
+        return F.conv2d(HR_image, kernel.to(HR_image), stride=1, padding=int((kernal_size - 1) / 2), groups=out_channel)
 
 
 if __name__ == '__main__':

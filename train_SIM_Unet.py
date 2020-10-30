@@ -10,7 +10,7 @@ import random
 import time
 from utils.SpeckleSIMDataLoad import SIM_data_load
 from torch.utils.data import DataLoader
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
 import os
 from early_stopping.pytorchtools import EarlyStopping
 

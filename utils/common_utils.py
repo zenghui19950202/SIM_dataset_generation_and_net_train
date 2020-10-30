@@ -252,7 +252,7 @@ def save_image_tensor2pillow(input_tensor: torch.Tensor, file_name):
     input_tensor = input_tensor.to(torch.device('cpu'))
     input_tensor = input_tensor.squeeze()
     input_tensor = input_tensor/input_tensor.max()
-    input_PIL = transforms.ToPILImage()(input_tensor)
+    input_PIL = transforms.ToPILImage()(input_tensor.float())
 
     if not os.path.exists(file_name):
         try:
@@ -265,7 +265,7 @@ def save_image_tensor2pillow(input_tensor: torch.Tensor, file_name):
     input_PIL.save(save_path)
 
 
-def get_params(opt_over, net, fusion_param, pattern_parameters, downsampler=None,weight_decay = 1e-5):
+def get_params(opt_over, net, fusion_param = None, pattern_parameters = None , downsampler=None,weight_decay = 1e-5):
     '''Returns parameters that we want to optimize over.
 
     Args:

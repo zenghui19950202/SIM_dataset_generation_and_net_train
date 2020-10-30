@@ -84,8 +84,8 @@ def notch_filter(SR_image, estimated_pattern_parameters):
             fx_shift = fx - j * spatial_freq_mean[0]
             fy_shift = fy - j * spatial_freq_mean[1]
             fr_square = (fx_shift ** 2 + fy_shift ** 2)
-            f0 =  image_size[0]/256 * 4
-            notch_filter += torch.exp(-1* fr_square / (4 * f0*f0)).to(device)
+            f0 = image_size[0]/256 * 2
+            notch_filter += torch.exp(-1 * fr_square / (4 * f0 *f0)).to(device)
 
     fft_image_np_filtered = fft_image_np * (1- notch_filter.detach().cpu().numpy())
     image_np_filtered = abs(ifft2(ifftshift(fft_image_np_filtered, axes=(0, 1)), axes=(0, 1)))

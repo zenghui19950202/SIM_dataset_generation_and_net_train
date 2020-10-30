@@ -44,6 +44,8 @@ def load_data_generation_config_paras():
     data_generation_parameters['image_size'] = config.getint('SIM_data_generation', 'image_size')
     data_generation_parameters['pattern_frequency_ratio'] = config.getfloat('SIM_data_generation', 'pattern_frequency_ratio')
     data_generation_parameters['data_num'] = config.getint('SIM_data_generation', 'data_num')
+    data_generation_parameters['sample_num_train'] = config.getint('SIM_data_generation', 'sample_num_train')
+    data_generation_parameters['sample_num_valid'] = config.getint('SIM_data_generation', 'sample_num_valid')
 
     return data_generation_parameters
 

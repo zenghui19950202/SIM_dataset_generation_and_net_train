@@ -12,11 +12,11 @@ from configparser import ConfigParser
 import random
 
 
-class SpecklePattern(SinusoidalPattern):
+class multi_spot_pattern(SinusoidalPattern):
 
     def _init_(self,directory_txt_file=None):
        self.directory_txt_file = directory_txt_file
-       super(SpecklePattern,self)._init_(self, probability=1)
+       super(multi_spot_pattern,self)._init_(self, probability=1)
     def perform_operation(self, images):
         """
         Crop the passed :attr:`images` by percentage area, returning the crop as an
@@ -103,10 +103,10 @@ if __name__ == '__main__':
 
     p = Pipeline_speckle.Pipeline_speckle(source_directory=train_directory, output_directory="../speckle_SIM_data_train")
     p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
-    p.add_operation(SpecklePattern(probability=1))
+    p.add_operation(multi_spot_pattern(probability=1))
     p.sample(1,multi_threaded=True,data_type='train',data_num = 16)
 
     p = Pipeline_speckle.Pipeline_speckle(source_directory=valid_directory, output_directory="../speckle_SIM_data_valid")
     p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
-    p.add_operation(SpecklePattern(probability=1))
+    p.add_operation(multi_spot_pattern(probability=1))
     p.sample(1,multi_threaded=True,data_type='valid',data_num = 16)

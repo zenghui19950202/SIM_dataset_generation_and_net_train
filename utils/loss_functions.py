@@ -16,6 +16,10 @@ class MSE_loss(nn.Module):
         # mean_pattern_gt = pattern_gt.detach().mean()
         mean_pattern = pattern.mean()
         mean_pattern_gt = pattern_gt.mean()
+        # mean_pattern = torch.tensor([1.0],device = pattern.device)
+        # mean_pattern_gt = torch.tensor([1.0],device = pattern.device)
+        # mean_pattern = pattern.detach().max()
+        # mean_pattern_gt = pattern.detach().max()
         if mean_pattern < 1e-20:
             pattern_nomalized = pattern / (mean_pattern + 1e-19)
         else:
@@ -105,6 +109,15 @@ class MSE_loss_3(nn.Module):
             loss += torch.mean(torch.pow((pattern_slice_nomalized - pattern_gt_slice_nomalized)* mask, 2))
         return loss
 
+class MSE_loss_normal(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, pattern, pattern_gt):
+        loss = torch.tensor([0.],device = pattern.device)
+        loss += torch.mean(torch.pow((pattern - pattern_gt), 2))
+        return loss
+
 def tv_loss_calculate(x, beta=0.5):
     '''Calculates TV loss for an image `x`.
 
@@ -112,6 +125,13 @@ def tv_loss_calculate(x, beta=0.5):
         x: image, torch.Variable of torch.Tensor
         beta: See https://arxiv.org/abs/1412.0035 (fig. 2) to see effect of `beta`
     '''
+    if x.dim() == 4:
+        pass
+    elif x.dim() == 2:
+        x = x.unsqueeze(0).unsqueeze(0)
+    else:
+        raise Exception('dim of inputted x must be 2 or 4')
+
     dh = torch.pow(x[:, :, :, 1:] - x[:, :, :, :-1], 2)
     dw = torch.pow(x[:, :, 1:, :] - x[:, :, :-1, :], 2)
 
