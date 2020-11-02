@@ -52,7 +52,7 @@ class SIM_data_load(data.Dataset):
         if image_format == 'tif' or image_format == 'tiff':
             HR_image_np = cv2.imread(HR_image_directoty, -1)/1.0
             LR_image_np = cv2.imread(LR_image_directoty, -1)/1.0
-            image_size = [HR_image_np.shape[0], HR_image_np.shape[1]]
+            image_size = [LR_image_np.shape[0], LR_image_np.shape[1]]
             self.image_size = image_size
             HR_image_tensor = torch.from_numpy(HR_image_np)
             LR_image_tensor = torch.from_numpy(LR_image_np)

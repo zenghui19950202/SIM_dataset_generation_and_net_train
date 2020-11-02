@@ -17,15 +17,16 @@ from torchvision import transforms
 from scipy.interpolate import interp2d
 
 def calculate_phase(image,pixel_frequency):
+
     image = image.squeeze()
-    experimental_parameters = SinusoidalPattern(probability = 1)
+    image_size = image.size()[0]
+    experimental_parameters = SinusoidalPattern(probability = 1,image_size = image_size)
     image_size = experimental_parameters.image_size
     image_np = image.detach().numpy()
     fft_image_np = fftshift(fft2(image_np, axes=(0, 1)), axes=(0, 1))
     # OTF = experimental_parameters.OTF
     # OTF_np  = OTF.detach().numpy()
     # fft_numpy_image * OTF_np.conj()
-    experimental_parameters = SinusoidalPattern(probability=1)
     image_size = experimental_parameters.image_size
     xx, yy, _, _ = experimental_parameters.GridGenerate(image_size, grid_mode='pixel')
     image_np_times_phase_gradient = image_np * np.exp(-1j * 2 * math.pi * (pixel_frequency[0].float()/image_size * xx + pixel_frequency[1].float()/image_size * yy).numpy())
@@ -43,7 +44,8 @@ def calculate_phase(image,pixel_frequency):
 
 def calculate_spatial_frequency (image):
     image = image.squeeze()
-    experimental_parameters = SinusoidalPattern(probability = 1)
+    image_size = image.size()[0]
+    experimental_parameters = SinusoidalPattern(probability = 1,image_size = image_size)
     image_np = image.detach().numpy()
     fft_numpy_image = fftshift(fft2(image_np, axes=(0, 1)), axes=(0, 1))
     abs_fft_np_image = abs(fft_numpy_image)
@@ -115,7 +117,8 @@ def calculate_spatial_frequency (image):
 #     return frequency_peak
 
 def shift_freq_domain_peak_intensity(subpixel_shift,image_np,peak_position_pixel):
-    experimental_parameters = SinusoidalPattern(probability=1)
+    image_size = image_np.shape[0]
+    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size)
     image_size = experimental_parameters.image_size
     xx, yy, _, _ = experimental_parameters.GridGenerate(image_size, grid_mode='pixel')
     image_np_times_phase_gradient = image_np * np.exp(-1j * 2 * math.pi * (subpixel_shift[0]/image_size * xx + subpixel_shift[1]/image_size * yy).numpy())
@@ -135,6 +138,7 @@ def maxmize_shift_peak_intesity(image_np,peak_position_pixel,max_iteritive = 400
     step = 1e-1   #沿方向搜索计算时的步距，这里的单位是像素而不是空间频率
     tolerance = 1e-3   #计算结果的最高精度，比给出结果的有效位数高一个小数位
     # subpixel_location = np.zeros(2,dtype = float)
+    image_size = image_np.shape[0]
     subpixel_location = torch.zeros(2, dtype=float)
     max_peak_intensity = shift_freq_domain_peak_intensity(subpixel_location, image_np, peak_position_pixel)
     epoch = 0
@@ -161,7 +165,7 @@ def maxmize_shift_peak_intesity(image_np,peak_position_pixel,max_iteritive = 400
         # print(subpixel_location,temp_peak_intensity,max_peak_intensity)
         epoch = epoch + 1
 
-    experimental_parameters = SinusoidalPattern(probability=1)
+    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size)
     image_size = experimental_parameters.image_size
     f0 = experimental_parameters.f_cutoff
     delta_fx = experimental_parameters.delta_fx

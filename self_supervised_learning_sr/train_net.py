@@ -23,7 +23,7 @@ import numpy as np
 def try_gpu():
     """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
     if torch.cuda.is_available():
-        device = torch.device('cuda:3')
+        device = torch.device('cuda:4')
     else:
         device = torch.device('cpu')
     return device
@@ -59,8 +59,8 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
             break
         data_id += 1
 
-    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2,3,6])
-    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,2,3,6])
+    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,3,6])
+    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,3,6])
     # input_SIM_raw_data_normalized = processing_utils.pre_processing(input_SIM_raw_data)
 
     psf_radius = math.floor(psf.size()[0] / 2)
@@ -115,9 +115,9 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
 
         if end_flag > 1:
             if switch_flag == 1:
-                temp_input_SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(input_SIM_raw_data,
-                                                                                 estimated_pattern_parameters,
-                                                                                 delta_pattern_params, xx, yy)
+                # temp_input_SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(input_SIM_raw_data,
+                #                                                                  estimated_pattern_parameters,
+                #                                                                  delta_pattern_params, xx, yy)
                 SIM_raw_data_estimated = forward_model.positive_propagate(SR_image, temp_input_SIM_pattern, psf_conv)
             else:
                 SIM_raw_data_estimated = forward_model.positive_propagate(SR_image, temp_input_SIM_pattern.detach(), psf_conv)
@@ -150,7 +150,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
             train_loss = loss.float()
 
         print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
-        SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(input_SIM_raw_data,estimated_pattern_parameters,delta_pattern_params,xx,yy)
+        # SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(input_SIM_raw_data,estimated_pattern_parameters,delta_pattern_params,xx,yy)
         # print(delta_pattern_params)
         if epoch == 999:  # safe checkpoint
             temp_loss = train_loss
@@ -173,9 +173,14 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
                 temp_optimizer_state_dict = copy.deepcopy(optimizer_net.state_dict())
                 checkpoint_loss = train_loss
 
+        if epoch > 2000:
+            wide_field_estimated = forward_model.positive_propagate(SR_image, 1, psf_conv)
+
+
         if min_loss > train_loss:
             min_loss = train_loss
-            result = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
+            result = SR_image_high_freq_filtered.squeeze()
+            # result = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
             # best_SR =SR_image_high_freq_filtered
             best_SR = result[psf_radius:-psf_radius, psf_radius:-psf_radius]
 
@@ -188,8 +193,9 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
             # out_HR_np = out_HR_np/out_HR_np.max()
             # common_utils.plot_image_grid([out_HR_np[0, :, :].reshape(1, out_HR_np.shape[1], -1), out_HR_np[3, :, :].reshape(1, out_HR_np.shape[1], -1),
             #                               out_HR_np[6,:,:].reshape(1,out_HR_np.shape[1],-1)], factor=13, nrow=3)
-            SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
-            result = SR_image_high_freq_and_notch_filtered[psf_radius:-psf_radius, psf_radius:-psf_radius]
+            # SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
+            result = SR_image_high_freq_filtered.squeeze()[psf_radius:-psf_radius, psf_radius:-psf_radius]
+            # result = SR_image_high_freq_and_notch_filtered[psf_radius:-psf_radius, psf_radius:-psf_radius]
             common_utils.plot_single_tensor_image(result)
 
 

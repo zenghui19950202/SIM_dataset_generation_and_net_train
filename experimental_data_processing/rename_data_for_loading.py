@@ -6,8 +6,8 @@ import torch
 import os
 import uuid
 
-def rename_data_for_loading(image_directory,crop_size = 256, LR_name ='UnapodizedReconstruction', HR_name = 'WideField'):
-    SIM_data_image_directoty = image_directory + '/00000001'+ '.' + 'tif'
+def rename_data_for_loading(image_directory,crop_size = 256, data_name = 'raw-530nm-000',LR_name ='UnapodizedReconstruction', HR_name = 'WideField'):
+    SIM_data_image_directoty = image_directory + '/' + data_name + '1'+ '.' + 'tif'
     SIM_image_np_1 = cv2.imread(SIM_data_image_directoty, -1) / 1.0
     image_size = [SIM_image_np_1.shape[0], SIM_image_np_1.shape[1]]
     image_number = 9
@@ -54,12 +54,12 @@ def rename_data_for_loading(image_directory,crop_size = 256, LR_name ='Unapodize
     else:
         cv2.imwrite(save_name, LR_image_np)
 
-    if LR_image_np.shape[0] < crop_size:
+    if image_size[0] < crop_size:
         for i in range(image_number):
             SIM_data_image_directoty = image_directory \
                                        + '/' \
-                                       + '0000000'\
-                                       + str(i + 1)\
+                                       + data_name\
+                                       + str(i + 1) \
                                        + '.' + 'tif'
             SIM_image_np = cv2.imread(SIM_data_image_directoty, -1)
 
@@ -79,7 +79,7 @@ def rename_data_for_loading(image_directory,crop_size = 256, LR_name ='Unapodize
         for i in range(image_number):
             SIM_data_image_directoty = image_directory \
                                        + '/' \
-                                       + '0000000' \
+                                       + data_name\
                                        + str(i + 1) \
                                        + '.' + 'tif'
             SIM_image_np = cv2.imread(SIM_data_image_directoty, -1)
@@ -105,4 +105,4 @@ def crop_center(img,crop_size):
     starty = y//2 - crop_size//2
     return img[starty:(starty+crop_size), startx:(startx+crop_size)]
 if __name__ == '__main__':
-    rename_data_for_loading('/home/common/Zenghui/test_for_self_9_frames_supervised_SR_net/2DSIMraw7/train')
+    rename_data_for_loading('/home/common/zenghui/2/', LR_name ='AVG_raw-530nm', HR_name = 'AVG_raw-530nm' )

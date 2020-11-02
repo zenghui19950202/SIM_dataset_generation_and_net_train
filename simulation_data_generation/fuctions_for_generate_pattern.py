@@ -56,20 +56,32 @@ class SinusoidalPattern(Operations.Operation):
         self.NA = data_generation_parameters['NA']
         self.NumPhase = data_generation_parameters['NumPhase']
         self.SNR = data_generation_parameters['SNR']
+        self.f_cutoff = 2 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
+
         if image_size == None:
             self.image_size = data_generation_parameters['image_size']
         else:
             self.image_size = image_size
         self.pattern_frequency_ratio = data_generation_parameters['pattern_frequency_ratio']
         self.data_num = data_generation_parameters['data_num']
-
         self.PixelSize = self.PixelSizeOfCCD / self.Magnification
         self.delta_x = self.PixelSize  # xy方向的空域像素间隔，单位m
         self.delta_y = self.PixelSize
         self.delta_fx = 1 / self.image_size / self.delta_x  # xy方向的频域像素间隔，单位m ^ -1
         self.delta_fy = 1 / self.image_size / self.delta_y
+
+        if self.PixelSize > 0.61 * self.EmWaveLength / self.NA / 4:
+            self.SR_image_size = self.image_size * 2
+            self.SR_PixelSize = self.PixelSizeOfCCD / self.Magnification / 2
+            self.upsample = True
+            self.xx_upsmaple, self.yy_upsmaple, self.fx_upsmaple, self.fy_upsmaple = self.GridGenerate(self.image_size, up_sample=self.upsample)
+            self.f_upsample = pow((self.fx_upsmaple ** 2 + self.fy_upsmaple ** 2), 1 / 2)
+            self.OTF_upsmaple = self.OTF_form(fc_ratio=1,pixel_mode='upsample')
+        else:
+            self.upsample = False
+
         self.xx, self.yy, self.fx, self.fy = self.GridGenerate(self.image_size)
-        self.f_cutoff = 2 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
+
         self.f = pow((self.fx ** 2 + self.fy ** 2), 1 / 2)  # The spatial freqneucy fr=sqrt( fx^2 + fy^2 )
 
         self.OTF = self.OTF_form(fc_ratio=1)
@@ -118,6 +130,10 @@ class SinusoidalPattern(Operations.Operation):
         SinPatternPIL_Image = []
         SIMdata_PIL_Image = []
         random_initial_direction_phase = random.random() * 2 * math.pi
+
+        if self.upsample == True:
+            up_sample = torch.nn.UpsamplingBilinear2d(scale_factor=2)
+            image = up_sample(image.unsqueeze(0)).squeeze()
 
         if self.data_num == 9:
             for i in range(3):
@@ -179,19 +195,30 @@ class SinusoidalPattern(Operations.Operation):
         return SIMdata_PIL_Image + SinPatternPIL_Image
 
     def generate_single_SIM_data(self,image,SpatialFrequencyX,SpatialFrequencyY,modulation_factor,phase):
+        xx, yy,_,_ = self.GridGenerate(up_sample= self.upsample, grid_mode='real')
         SinPattern = (torch.cos(
             phase + 2 * math.pi * (
-                    SpatialFrequencyX * self.xx + SpatialFrequencyY * self.yy)) * modulation_factor + 1) / 2
-        SIMdata_OTF_filter = self.OTF_Filter(SinPattern * image, self.OTF)
+                    SpatialFrequencyX * xx + SpatialFrequencyY * yy)) * modulation_factor + 1) / 2
+        if self.upsample == True:
+            OTF = self.OTF_upsmaple
+        else:
+            OTF = self.OTF
+        SIMdata_OTF_filter = self.OTF_Filter(SinPattern * image, OTF)
         SIMdata_OTF_filter_gaussian_noise = self.add_gaussian_noise(SIMdata_OTF_filter)
         SIMdata_OTF_filter_gaussian_noise = SIMdata_OTF_filter_gaussian_noise.float()
-        SIMdata_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(
-            SIMdata_OTF_filter_gaussian_noise).convert('RGB')
+        AvgPooling = nn.AvgPool2d(kernel_size=2)
+        if self.upsample == True:
+            SIMdata_OTF_filter_gaussian_noise_pooling = AvgPooling(SIMdata_OTF_filter_gaussian_noise.unsqueeze(0).unsqueeze(0)).squeeze()
+            SIMdata_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(
+                SIMdata_OTF_filter_gaussian_noise_pooling).convert('RGB')
+        else:
+            SIMdata_OTF_filter_gaussian_noise_PIL = transforms.ToPILImage()(
+                SIMdata_OTF_filter_gaussian_noise).convert('RGB')
         SinPattern = SinPattern.float()
         SinPattern_PIL = transforms.ToPILImage()(SinPattern).convert('RGB')
 
         return SIMdata_OTF_filter_gaussian_noise_PIL, SinPattern_PIL
-    def GridGenerate(self, image_size, grid_mode='real'):
+    def GridGenerate(self, image_size=256, up_sample= False, grid_mode='real'):
         '''
         :param Magnification: the magnification of the Microscope
         :param PixelSize: the PixleSize of the sCMOS or CCD
@@ -199,7 +226,11 @@ class SinusoidalPattern(Operations.Operation):
         :param NA:  NA(numerical aperture) of the objective
         :return:
         '''
-        y, x = image_size, image_size
+        if up_sample == True:
+            y, x = self.SR_image_size, self.SR_image_size
+        else:
+            y, x = self.image_size, self.image_size
+
         if x % 2 == 1:
             if y % 2 == 1:
                 xx, yy = torch.meshgrid(torch.arange(-(x - 1) / 2, (x + 1) / 2, 1),
@@ -214,17 +245,28 @@ class SinusoidalPattern(Operations.Operation):
             else:
                 xx, yy = torch.meshgrid(torch.arange(-x / 2, x / 2, 1),
                                         torch.arange(-y / 2, y / 2, 1))  # 空域x方向坐标为偶数，y方向坐标为偶数的情况
-
-        if grid_mode == 'real':
-            fx = xx * self.delta_fx
-            fy = yy * self.delta_fy
-            xx = xx * self.delta_x
-            yy = yy * self.delta_y
-        elif grid_mode == 'pixel':
-            fx = xx * 1.0 / self.image_size
-            fy = yy * 1.0 / self.image_size
+        if up_sample == False:
+            if grid_mode == 'real':
+                fx = xx * self.delta_fx
+                fy = yy * self.delta_fy
+                xx = xx * self.delta_x
+                yy = yy * self.delta_y
+            elif grid_mode == 'pixel':
+                fx = xx * 1.0 / self.delta_x
+                fy = yy * 1.0 / self.delta_y
+            else:
+                raise Exception('error grid mode')
         else:
-            raise Exception('error grid mode')
+            if grid_mode == 'real':
+                fx = xx * self.delta_fx
+                fy = yy * self.delta_fy
+                xx = xx * self.SR_PixelSize
+                yy = yy * self.SR_PixelSize
+            elif grid_mode == 'pixel':
+                fx = xx * 1.0 / self.SR_image_size
+                fy = yy * 1.0 / self.SR_image_size
+            else:
+                raise Exception('error grid mode')
 
         return xx, yy, fx, fy
 
@@ -289,11 +331,15 @@ class SinusoidalPattern(Operations.Operation):
         LR_image_PIL = transforms.ToPILImage()(LR_image_tensor).convert('RGB')
         return [LR_image_PIL]
 
-    def OTF_form(self, fc_ratio=1):
+    def OTF_form(self, fc_ratio=1, pixel_mode = 'default'):
         f0 = fc_ratio * self.f_cutoff
-        f = self.f
+        if pixel_mode == 'default':
+            f = self.f
+        elif pixel_mode == 'upsample':
+            f = self.f_upsample
+
         OTF = torch.where(f < f0, (2 / math.pi) * (torch.acos(f / f0) - (f / f0) * (
-            pow((1 - (self.f / f0) ** 2), 0.5))), torch.Tensor([0]))  # Caculate the OTF support
+            pow((1 - (f / f0) ** 2), 0.5))), torch.Tensor([0]))  # Caculate the OTF support
         # OTF = torch.where(f < f0,torch.ones_like(f),torch.zeros_like(f))
         return OTF
 

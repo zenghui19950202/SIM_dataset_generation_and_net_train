@@ -7,10 +7,15 @@ from PIL import Image
 from torchvision import transforms
 from simulation_data_generation.generate_hologram_diffraction import hologram
 from utils import *
+import torch.nn as nn
 
 
-def positive_propagate(SR_image, SIM_pattern, psf_conv):
-    SIM_raw_data_estimated = psf_conv(SR_image * SIM_pattern)
+def positive_propagate(SR_image, SIM_pattern, psf_conv,down_sample = False):
+    AvgPooling = nn.AvgPool2d(kernel_size= 2)
+    if down_sample == False:
+        SIM_raw_data_estimated = psf_conv(SR_image * SIM_pattern)
+    else:
+        SIM_raw_data_estimated = AvgPooling(psf_conv(SR_image * SIM_pattern))
     return SIM_raw_data_estimated
 
 def low_pass_filter(image,filter):
