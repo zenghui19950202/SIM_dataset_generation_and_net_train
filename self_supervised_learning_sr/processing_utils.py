@@ -63,7 +63,7 @@ def notch_filter(SR_image, estimated_pattern_parameters):
     image_size = SR_image.size()
     SR_image_np = SR_image.detach().cpu().numpy()
     fft_image_np = fftshift(fft2(SR_image_np, axes=(0, 1)), axes=(0, 1))
-    experimental_parameters = SinusoidalPattern(probability=1)
+    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size[0])
     fx, fy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
     spatial_freq = estimated_pattern_parameters[:, 0:2].squeeze()
     notch_filter = torch.zeros_like(SR_image)
@@ -73,13 +73,18 @@ def notch_filter(SR_image, estimated_pattern_parameters):
     for i in range(3):
         if input_num == 9:
             spatial_freq_mean = torch.mean(spatial_freq[0 + 3 * i:3 + 3 * i, :], dim=0)
-        elif input_num == 5:
+        # elif input_num == 5:
+        #     if i == 0:
+        #         spatial_freq_mean = torch.mean(spatial_freq[0:3, :], dim=0)
+        #     else:
+        #         spatial_freq_mean = spatial_freq[2 + i, :]
+        elif input_num == 4:
+            spatial_freq_mean = spatial_freq[i, :]
+        else:
             if i == 0:
                 spatial_freq_mean = torch.mean(spatial_freq[0:3, :], dim=0)
             else:
                 spatial_freq_mean = spatial_freq[2 + i, :]
-        elif input_num == 4:
-            spatial_freq_mean = spatial_freq[i, :]
         for j in freq_list:
             fx_shift = fx - j * spatial_freq_mean[0]
             fy_shift = fy - j * spatial_freq_mean[1]
@@ -93,6 +98,55 @@ def notch_filter(SR_image, estimated_pattern_parameters):
     image_filtered_tensor = torch.from_numpy(image_np_filtered)
 
     return image_filtered_tensor
+
+
+def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters):
+    SR_image = SR_image.squeeze()
+    image_size = SR_image.size()
+    SR_image_np = SR_image.detach().cpu().numpy()
+    fft_image_np = fftshift(fft2(SR_image_np, axes=(0, 1)), axes=(0, 1))
+    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size[0])
+    fx, fy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
+    spatial_freq = estimated_pattern_parameters[:, 0:2].squeeze()
+    spatial_freq_x_positive = torch.zeros([3,2])
+    spatial_freq_all = torch.zeros([6,2])
+
+    notch_filter = torch.zeros_like(SR_image)
+    device = SR_image.device
+    input_num = spatial_freq.size()[0]
+    for i in range(3):
+        if input_num == 9:
+            spatial_freq_x_positive[i,:] = torch.mean(spatial_freq[0 + 3 * i:3 + 3 * i, :], dim=0)
+
+        elif input_num == 4:
+            spatial_freq_x_positive[i,:] = spatial_freq[i, :]
+        else:
+            if i == 0:
+                spatial_freq_x_positive[i,:] = torch.mean(spatial_freq[0:3, :], dim=0)
+            else:
+                spatial_freq_x_positive[i,:] = spatial_freq[2 + i, :]
+        if spatial_freq_x_positive[i,0] < 0:
+            spatial_freq_all[i,:] = spatial_freq_x_positive[i,:] * -1
+            spatial_freq_all[i+3,:] = spatial_freq_all[i,:] * -1
+
+    for i in range(6):
+        for j in range(6):
+            if j >= i:
+                spatial_freq_combination = spatial_freq_all[i,:] + spatial_freq_all[j,:]
+                if torch.norm(spatial_freq_combination) > 20:
+                    fx_shift = fx - spatial_freq_combination[0]
+                    fy_shift = fy - spatial_freq_combination[1]
+                    fr_square = (fx_shift ** 2 + fy_shift ** 2)
+                    f0 = image_size[0] / 256 * 2
+                    notch_filter += torch.exp(-1 * fr_square / (4 * f0 * f0)).to(device)
+
+    fft_image_np_filtered = fft_image_np * (1- notch_filter.detach().cpu().numpy())
+    image_np_filtered = abs(ifft2(ifftshift(fft_image_np_filtered, axes=(0, 1)), axes=(0, 1)))
+    image_np_filtered = image_np_filtered/image_np_filtered.max() * 256
+    image_filtered_tensor = torch.from_numpy(image_np_filtered)
+
+    return image_filtered_tensor
+
 
 def notch_filter_single_direction(SR_image, estimated_pattern_parameters):
     SR_image = SR_image.squeeze()

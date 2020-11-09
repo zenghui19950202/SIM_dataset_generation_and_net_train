@@ -10,7 +10,7 @@ import random
 import time
 from utils.SpeckleSIMDataLoad import SIM_data_load
 from torch.utils.data import DataLoader
-# from tensorboardX import SummaryWriter
+from tensorboardX import SummaryWriter
 import os
 from early_stopping.pytorchtools import EarlyStopping
 
@@ -173,8 +173,8 @@ if __name__ == '__main__':
     data_num = train_net_parameters['data_num']
 
     param_grid = {
-        'learning_rate': [0.000168],
-        'batch_size': [1],
+        'learning_rate': [0.000168,0.0002,0.0001,0.0003,0.00005],
+        'batch_size': [64,32],
         'weight_decay': [1e-5],
         'Dropout_ratio': [1]
     }

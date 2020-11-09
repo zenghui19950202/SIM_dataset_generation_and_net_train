@@ -70,9 +70,9 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     LR = SR_LR[:, :, :, 1].to(device)
 
     LR = torch.mean(SIM_raw_data[:,0:3,:,:],dim = 1).to(device)
-
-    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data)
-    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern)
+    noise = torch.zeros_like(LR)
+    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2,3,6])
+    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,2,3,6])
 
     if experimental_params.upsample == True:
         up_sample = torch.nn.UpsamplingBilinear2d(scale_factor=2)
@@ -88,6 +88,10 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         SR_image0 = copy.deepcopy(LR).to(device)
         SR_image1 = copy.deepcopy(LR).to(device)
         SR_image2 = copy.deepcopy(LR).to(device)
+        # SR_image0 = torch.rand_like(LR).to(device)
+        # SR_image1 = torch.rand_like(LR).to(device)
+        # SR_image2 = torch.rand_like(LR).to(device)
+
         result_in_3_dim = torch.zeros([experimental_params.image_size, experimental_params.image_size, 3],
                                       device=device)
         OTF = experimental_params.OTF
@@ -131,9 +135,9 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     params0 = [{'params': SR_image0, 'weight_decay': weight_decay}]
     params1 = [{'params': SR_image1, 'weight_decay': weight_decay}]
     params2 = [{'params': SR_image2, 'weight_decay': weight_decay}]
-    optimizer_pattern_params0 = optim.Adam(params0, lr=0.001)
-    optimizer_pattern_params1 = optim.Adam(params1, lr=0.001)
-    optimizer_pattern_params2 = optim.Adam(params2, lr=0.001)
+    optimizer_pattern_params0 = optim.Adam(params0, lr=lr)
+    optimizer_pattern_params1 = optim.Adam(params1, lr=lr)
+    optimizer_pattern_params2 = optim.Adam(params2, lr=lr)
 
     SR_image = [SR_image0, SR_image1, SR_image2]
 
@@ -146,30 +150,47 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
 
     for epoch in range(num_epochs):
 
+        net_input_noise = noise.normal_() * reg_noise_std
+        net_input_noise = net_input_noise.to(device)
+
         i = int(epoch*3 / num_epochs)
         loss = torch.tensor([0.0], dtype=torch.float32, device=device)
         optimizer[i].zero_grad()
-        LR_estimated = forward_model.positive_propagate(SR_image[i], 1, psf_conv,down_sample = experimental_params.upsample)
-        loss += criterion(LR_estimated, LR, mask)
+        SR_image_noise = SR_image[i] +  net_input_noise
+        # SR_image_noise = SR_image[i]
+        # LR_estimated = forward_model.positive_propagate((SR_image[i]+net_input_noise), 1, psf_conv,down_sample = experimental_params.upsample)
+        # loss += criterion(LR_estimated, LR, mask)
         if temp_input_SIM_pattern.size()[1] == 3:
-            SIM_raw_data_estimated = forward_model.positive_propagate(SR_image[i],
+            SIM_raw_data_estimated = forward_model.positive_propagate(SR_image_noise,
                                                                       temp_input_SIM_pattern[:, i, :, :].detach(),
                                                                       psf_conv,down_sample = experimental_params.upsample)
             loss += criterion(SIM_raw_data_estimated, input_SIM_raw_data[:, i, :, :], mask)
+
+            LR_estimated = forward_model.positive_propagate(SR_image[i],
+                                                            1,
+                                                            psf_conv,
+                                                            down_sample=experimental_params.upsample)
+            loss += criterion(LR_estimated, LR, mask)
         elif temp_input_SIM_pattern.size()[1] == 5:
             if i ==0:
-                SIM_raw_data_estimated = forward_model.positive_propagate(SR_image[i],
+                SIM_raw_data_estimated = forward_model.positive_propagate(SR_image_noise,
                                                                           temp_input_SIM_pattern[:, 0:3, :, :].detach(),
                                                                           psf_conv,down_sample = experimental_params.upsample)
                 loss += criterion(SIM_raw_data_estimated, input_SIM_raw_data[:, 0:3, :, :], mask)
             else:
-                SIM_raw_data_estimated = forward_model.positive_propagate(SR_image[i],
+                SIM_raw_data_estimated = forward_model.positive_propagate(SR_image_noise,
                                                                           temp_input_SIM_pattern[:, i+ 2, :, :].detach(),
                                                                           psf_conv,down_sample = experimental_params.upsample)
                 loss += criterion(SIM_raw_data_estimated, input_SIM_raw_data[:, 2 + i, :, :], mask)
+
+                LR_estimated = forward_model.positive_propagate(SR_image[i],
+                                                                          1,
+                                                                          psf_conv,
+                                                                          down_sample=experimental_params.upsample)
+                loss += criterion(LR_estimated, LR, mask)
         elif temp_input_SIM_pattern.size()[1] == 9:
-            SIM_raw_data_estimated = forward_model.positive_propagate(SR_image[i],
-                                                                      temp_input_SIM_pattern[:, i*3:3 + i*3, :, :].detach(),
+            SIM_raw_data_estimated = forward_model.positive_propagate(SR_image_noise,
+                                                                      temp_input_SIM_pattern[:, i*3:3 + i*3, :, :],
                                                                       psf_conv,down_sample = experimental_params.upsample)
             loss += criterion(SIM_raw_data_estimated, input_SIM_raw_data[:, i*3:3 + i*3, :, :], mask)
 
@@ -177,25 +198,26 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         loss.backward()
         optimizer[i].step()
 
-        SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image[i], 1, psf_reconstruction_conv)
-        result_in_3_dim[:,:,i] = processing_utils.notch_filter_single_direction(
-            SR_image_high_freq_filtered, estimated_pattern_three_direction[i, :])
         with torch.no_grad():
             train_loss = loss.float()
 
         print('epoch: %d/%d, direction: %d train_loss: %f' % (epoch + 1, num_epochs,i, train_loss))
 
-        if min_loss > train_loss:
-            min_loss = train_loss
-            # SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
-            # best_SR = SR_image_high_freq_and_notch_filtered[psf_radius: -psf_radius, psf_radius: -psf_radius]
-            best_SR = SR_image_high_freq_filtered.squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
-        if (epoch + 1) % 499 == 0:
-            # result = SR_image_high_freq_filtered.squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
-            SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter_single_direction(
-                SR_image_high_freq_filtered, estimated_pattern_three_direction[i, :])
-            # common_utils.plot_single_tensor_image(SR_image_high_freq_and_notch_filtered)
-            # common_utils.plot_single_tensor_image(SR_image_high_freq_filtered)
+        # if min_loss > train_loss:
+        #     min_loss = train_loss
+        #     # SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
+        #     # best_SR = SR_image_high_freq_and_notch_filtered[psf_radius: -psf_radius, psf_radius: -psf_radius]
+        #     best_SR = SR_image_high_freq_filtered.squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
+        # if (epoch + 1) % 499 == 0:
+        #     # result = SR_image_high_freq_filtered.squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
+        #     SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter_single_direction(
+        #         SR_image_high_freq_filtered, estimated_pattern_three_direction[i, :])
+        #     # common_utils.plot_single_tensor_image(SR_image_high_freq_and_notch_filtered)
+        #     # common_utils.plot_single_tensor_image(SR_image_high_freq_filtered)
+    for i in range(3):
+        SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image[i], 1, psf_reconstruction_conv)
+        result_in_3_dim[:,:,i] = processing_utils.notch_filter_single_direction(
+        SR_image_high_freq_filtered, estimated_pattern_three_direction[i, :])
     result = torch.mean(result_in_3_dim, dim=2)[psf_radius: -psf_radius, psf_radius: -psf_radius]
     common_utils.plot_single_tensor_image(result)
     return train_loss, result
@@ -251,7 +273,7 @@ if __name__ == '__main__':
 
     random.seed(60)  # 设置随机种子
     # min_loss = 1e5
-    num_epochs = 2000
+    num_epochs = 9000
 
     random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
     lr = random_params['learning_rate']

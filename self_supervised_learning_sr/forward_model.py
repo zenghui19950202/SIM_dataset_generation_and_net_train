@@ -97,6 +97,9 @@ def expjk_to_cosk_sink_stack(k):
         raise Exception('The dim of input k must be 1 or 2')
     return result
 
+def intensity_to_complex_stack(k):
+    return torch.stack([k.unsqueeze(0), torch.zeros_like(k).unsqueeze(0)], 2)
+
 def cosk_sink_stack_to_phasek(cosk_sink_stack):
 
     phasek = torch.atan2(cosk_sink_stack[:,:,1],cosk_sink_stack[:,:,0])

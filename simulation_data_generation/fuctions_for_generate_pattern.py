@@ -80,6 +80,8 @@ class SinusoidalPattern(Operations.Operation):
         else:
             self.upsample = False
 
+        self.upsample = False
+
         self.xx, self.yy, self.fx, self.fy = self.GridGenerate(self.image_size)
 
         self.f = pow((self.fx ** 2 + self.fy ** 2), 1 / 2)  # The spatial freqneucy fr=sqrt( fx^2 + fy^2 )
@@ -138,6 +140,7 @@ class SinusoidalPattern(Operations.Operation):
         if self.data_num == 9:
             for i in range(3):
                 modulation_factor = random.random() / 2 + 0.5
+                # modulation_factor = 0.05
                 theta = i * 2 / 3 * math.pi + random_initial_direction_phase
                 SpatialFrequencyX = -self.pattern_frequency_ratio * 1 / resolution * math.sin(
                     theta)  # 0.8倍的极限频率条纹 pattern_frequency_ratio，可调
