@@ -56,7 +56,7 @@ class SinusoidalPattern(Operations.Operation):
         self.NA = data_generation_parameters['NA']
         self.NumPhase = data_generation_parameters['NumPhase']
         self.SNR = data_generation_parameters['SNR']
-        self.f_cutoff = 2 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
+        self.f_cutoff = 1/0.61 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
 
         if image_size == None:
             self.image_size = data_generation_parameters['image_size']
@@ -255,8 +255,8 @@ class SinusoidalPattern(Operations.Operation):
                 xx = xx * self.delta_x
                 yy = yy * self.delta_y
             elif grid_mode == 'pixel':
-                fx = xx * 1.0 / self.delta_x
-                fy = yy * 1.0 / self.delta_y
+                fx = xx * 1.0 / self.image_size
+                fy = yy * 1.0 / self.image_size
             else:
                 raise Exception('error grid mode')
         else:
@@ -306,7 +306,7 @@ class SinusoidalPattern(Operations.Operation):
         # if len(TensorImage)==3:
         #      TensorImage = TensorImage.permute(1, 2, 0) # transope for matplot
         # signal_intensity_of_image = (tensor_Image ** 2).mean()  # The mean intensity of signal
-        signal_std_of_image = (tensor_Image ** 2).std()  # The std intensity of signal
+        signal_std_of_image = tensor_Image.std()  # The std intensity of signal
         noise_std_of_image = signal_std_of_image / self.SNR
         noise_of_image = torch.zeros_like(tensor_Image)
         # std_of_noise = noise_std_of_image ** (0.5)

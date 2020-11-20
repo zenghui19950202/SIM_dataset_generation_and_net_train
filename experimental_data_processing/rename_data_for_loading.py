@@ -6,7 +6,7 @@ import torch
 import os
 import uuid
 
-def rename_data_for_loading(image_directory,crop_size = 256, data_name = 'raw-530nm-000',LR_name ='UnapodizedReconstruction', HR_name = 'WideField'):
+def rename_data_for_loading(image_directory,crop_size = 512, data_name = '0000000',LR_name ='UnapodizedReconstruction', HR_name = 'WideField'):
     SIM_data_image_directoty = image_directory + '/' + data_name + '1'+ '.' + 'tif'
     SIM_image_np_1 = cv2.imread(SIM_data_image_directoty, -1) / 1.0
     image_size = [SIM_image_np_1.shape[0], SIM_image_np_1.shape[1]]
@@ -105,4 +105,5 @@ def crop_center(img,crop_size):
     starty = y//2 - crop_size//2
     return img[starty:(starty+crop_size), startx:(startx+crop_size)]
 if __name__ == '__main__':
-    rename_data_for_loading('/home/common/zenghui/2/', LR_name ='AVG_raw-530nm', HR_name = 'AVG_raw-530nm' )
+    # rename_data_for_loading('/home/common/zenghui/2/', LR_name ='AVG_raw-530nm', HR_name = 'AVG_raw-530nm' )
+    rename_data_for_loading('/home/common/zenghui/blue_ray_disc_255/',data_name ='' , LR_name ='0', HR_name = 'reconstruction' )

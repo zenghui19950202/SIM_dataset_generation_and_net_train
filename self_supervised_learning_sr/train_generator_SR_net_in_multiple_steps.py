@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # author：zenghui time:2020/9/9
+# this version
+# I try to guide the net to learn the low frequency information at the beginning 5000
+# epochs and then based on this low frequency information and SIM data to learn high frequency information
+# it seems that the method at 120 row cannot complete the target
+
 from utils import *
 from models import *
 from self_supervised_learning_sr import *

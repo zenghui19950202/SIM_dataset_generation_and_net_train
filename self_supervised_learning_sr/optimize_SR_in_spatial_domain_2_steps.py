@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# author：zenghui time:2020/11/12
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 # author：zenghui time:2020/10/21
 
 from utils import *
@@ -55,18 +58,11 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     CTF = temp.CTF_form(fc_ratio=2 + 2*temp.pattern_frequency_ratio)
     CTF = CTF.to(device)
 
-
-
-
-    # OTF_reconstruction = temp.OTF_form(fc_ratio=1 + temp.pattern_frequency_ratio)
-    # psf_reconstruction = temp.psf_form(OTF_reconstruction)
-    # psf_reconstruction_conv = funcs.psf_conv_generator(psf_reconstruction,device)
-
     min_loss = 1e5
     best_SR = torch.zeros(image_size, dtype=torch.float32, device=device)
 
-    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2,3,6])
-    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,2,3,6])
+    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data)
+    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern)
     # input_SIM_raw_data_normalized = processing_utils.pre_processing(input_SIM_raw_data)
 
     # SR_image = SIM_data[1][:,:,:,1]
@@ -88,13 +84,8 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     psf_reconstruction = temp.psf_form(OTF_reconstruction)
     psf_reconstruction_conv = funcs.psf_conv_generator(psf_reconstruction,device)
 
-
     experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size[0])
     xx, yy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
-
-    # delta_pattern_params = torch.zeros_like(estimated_pattern_parameters)
-
-    # delta_pattern_params.requires_grad = True
 
     estimated_modulation_factor = estimated_pattern_parameters[:,2].clone().detach()
     estimated_modulation_factor.requires_grad = True
@@ -104,84 +95,70 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     SR_image.requires_grad = True
     params += [{'params': SR_image, 'weight_decay': weight_decay}]
     params += [{'params': estimated_modulation_factor}]
-    optimizer_pattern_params = optim.Adam(params, lr=0.01)
+    optimizer_pattern_params = optim.Adam(params, lr=0.001)
 
     input_SIM_raw_data = input_SIM_raw_data.to(device)
     input_SIM_pattern = input_SIM_pattern.to(device)
     temp_input_SIM_pattern = temp_input_SIM_pattern.to(device)
-    # temp_input_SIM_pattern = input_SIM_pattern
-    # temp_input_SIM_pattern = input_SIM_pattern
-    # delta_pattern_params = estimated_pattern_parameters
-    reg_noise_std = 0.03
-    for epoch in range(num_epochs):
-        # net.train()  # Switch to training mode
 
-        # net_input_noise = wide_field_image.normal_() * reg_noise_std
-        # net_input_noise = net_input_noise.to(device)
+    reg_noise_std = 0.03
+    #step 1
+    for epoch in range(num_epochs):
 
         optimizer_pattern_params.zero_grad()
-        # temp_input_SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(temp_input_SIM_pattern,
-        #                                              estimated_pattern_parameters,
-        #                                              estimated_modulation_factor, xx, yy)
-        # SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(SIM_raw_data.shape, estimated_pattern_parameters,
-        #                                                            delta_pattern_params, xx, yy)
-
-        # SIM_raw_data_estimated = forward_model.positive_propagate(abs(SR_image+ net_input_noise), temp_input_SIM_pattern, psf_conv)
-        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image,temp_input_SIM_pattern, psf_conv)
-
-        SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image.detach(), 1, psf_reconstruction_conv)
-        mse_loss = criterion(SIM_raw_data_estimated,input_SIM_raw_data, mask)
-
-        # SR_complex = torch.stack([SR_image, torch.zeros_like(SR_image)], 2)
-        # FFT_SR = torch.fft(SR_complex, 2 )
-        # shifted_FFT_SR = forward_model.torch_2d_fftshift(FFT_SR)
-        # shifted_FFT_SR_intensity = pow( pow(shifted_FFT_SR[:,:,0],2) + pow(shifted_FFT_SR[:,:,1],2), 1/2)
-        # normalized_shifted_FFT_SR = torch.log(1+(shifted_FFT_SR_intensity))
-        # tv_loss = 1e-8 * loss_functions.tv_loss_calculate(normalized_shifted_FFT_SR)
-        #
-        # tv_loss = 1e-6 * loss_functions.tv_loss_calculate(abs(SR_image).squeeze())
-        #
-
-        # a = abs(SR_image).squeeze()
-        # tv_loss = 1e-6 * loss_functions.tv_loss_calculate(a)
-        # loss = mse_loss + tv_loss
-
+        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image,temp_input_SIM_pattern[:, 0:3, :, :], psf_conv)
+        mse_loss = criterion(SIM_raw_data_estimated,input_SIM_raw_data[:, 0:3, :, :], 1)
         loss = mse_loss
         loss.backward()
         optimizer_pattern_params.step()
 
+        with torch.no_grad():
+            train_loss = loss.float()
+            m = estimated_modulation_factor
+        print('epoch: %d/%d, train_loss: %f, m : %f' % (epoch + 1, num_epochs, train_loss, m[0]))
+
+        if (epoch + 1) % num_epochs == 0:
+            SR_image1 = forward_model.positive_propagate(SR_image.detach(), 1, psf_reconstruction_conv)
+            common_utils.plot_single_tensor_image(SR_image1)
+   #step 2
+    for epoch in range(num_epochs):
+
+        optimizer_pattern_params.zero_grad()
+        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image,temp_input_SIM_pattern, psf_conv)
+        mse_loss = criterion(SIM_raw_data_estimated,input_SIM_raw_data, 1)
+        loss = mse_loss
+        loss.backward()
+        optimizer_pattern_params.step()
 
         with torch.no_grad():
             train_loss = loss.float()
             m = estimated_modulation_factor
-
         print('epoch: %d/%d, train_loss: %f, m : %f' % (epoch + 1, num_epochs, train_loss, m[0]))
         # SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(SIM_raw_data.shape,estimated_pattern_parameters,delta_pattern_params,xx,yy)
         # print(delta_pattern_params)
 
         if (epoch + 1) % num_epochs == 0:
+            SR_image2 =  forward_model.positive_propagate(SR_image.detach(), 1, psf_reconstruction_conv)
 
-            # SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
-            # result = SR_image_high_freq_and_notch_filtered[psf_radius: -psf_radius, psf_radius: -psf_radius]
-            #
-            # SR_image_notch_filtered = processing_utils.notch_filter(SR_image, estimated_pattern_parameters)
-            # result1 = forward_model.low_pass_filter(SR_image_notch_filtered.to(device),CTF)
-            # result1 = result1[psf_radius: -psf_radius, psf_radius: -psf_radius]
+    SR_image_low_freq_complex = torch.stack(
+        [SR_image1.squeeze(), torch.zeros_like(SR_image1).squeeze()], 2)
+    SR_image_low_freq_fft = forward_model.torch_2d_fftshift(
+        torch.fft((SR_image_low_freq_complex), 2))
 
-            result = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
-            result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
-            common_utils.plot_single_tensor_image(result)
-            # common_utils.plot_single_tensor_image(SR_image_high_freq_filtered)
+    SR_image_high_freq_complex = torch.stack(
+        [SR_image2.squeeze(), torch.zeros_like(SR_image2).squeeze()], 2)
+    SR_image_high_freq_fft = forward_model.torch_2d_fftshift(
+        torch.fft((SR_image_high_freq_complex), 2))
 
-            if min_loss > train_loss:
-                min_loss = train_loss
-                SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter(SR_image_high_freq_filtered,
-                                                                                      estimated_pattern_parameters)
-                # best_SR = result[psf_radius: -psf_radius, psf_radius: -psf_radius]
-                best_SR = result
-                # best_SR =SR_image_high_freq_filtered.squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
 
-    return train_loss, best_SR
+    result_fft = SR_image_low_freq_fft * CTF.unsqueeze(2)  + SR_image_high_freq_fft* (1-CTF).unsqueeze(2)
+    result = forward_model.complex_stack_to_intensity( torch.ifft(forward_model.torch_2d_ifftshift(result_fft),2) )
+    result = processing_utils.notch_filter_for_all_vulnerable_point(result,
+                                                                    estimated_pattern_parameters,filter_radius = 45).squeeze()
+    result = processing_utils.filter_for_computable_freq(result,estimated_pattern_parameters)
+    common_utils.plot_single_tensor_image(result)
+
+    return train_loss, result
 
 def init_weights(m):
     if type(m) == nn.Linear or type(m) == nn.Conv2d:
@@ -220,7 +197,7 @@ if __name__ == '__main__':
 
     random.seed(60)  # 设置随机种子
     # min_loss = 1e5
-    num_epochs = 1000
+    num_epochs = 3000
 
     random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
     lr = random_params['learning_rate']

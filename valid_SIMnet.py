@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from simulation_data_generation import SRimage_metrics
 from configparser import ConfigParser
 from models import *
+from utils import common_utils
 
 
 def result_net_valiated(SIMnet, input_SIM_images, HR_LR_image, normalize = True):
@@ -35,9 +36,10 @@ def result_net_valiated(SIMnet, input_SIM_images, HR_LR_image, normalize = True)
     if normalize == True:
         result_image = result_image * 0.5 + 0.5
     result_image = abs(result_image / result_image.max())
-    image_PIL = transforms.ToPILImage()(result_image).convert('RGB')
-    image_PIL.show()
-
+    # image_PIL = transforms.ToPILImage()(result_image).convert('RGB')
+    # image_PIL.show()
+    common_utils.plot_single_tensor_image(result_image)
+    common_utils.save_image_tensor2pillow(result_image.unsqueeze(0).unsqueeze(0),'/home/common/zenghui/microtube1_512/')
     # image = HR_LR_image[:, :, 1] * 0.5 + 0.5
     # image_PIL = transforms.ToPILImage()(image).convert('RGB')
     # image_PIL.show()
@@ -84,16 +86,16 @@ if __name__ == '__main__':
     # SIMnet.load_state_dict(torch.load('F:\PHD\SIMDataSet/SIMnet.pkl'))
     # SIMnet = UNet(num_raw_SIMdata, 1, input_mode=data_input_mode, LR_highway=LR_highway_type)
     SIMnet.load_state_dict(torch.load(
-        'F:\PHD/train_result/resnet_SIM_and_sum_images_input_all_images_add\lr_0.000168num_epochs_200batch_size_32weight_decay_1e-05/SIMnet.pkl',map_location='cuda:0'))
+        '/home/common/zenghui/train_result/resnet_SIM_and_sum_images_only_input_SIM_images_add/lr_0.0003num_epochs_200batch_size_32weight_decay_1e-05//SIMnet.pkl',map_location='cuda:0'))
 
     # train_directory_file = SourceFileDirectory + '/SIMdata_pattern_pairs_train.txt'
     valid_directory_file = "D:\DataSet\DIV2K/test"+ '/SIMdata_SR_train.txt'
-    valid_directory_file = "D:\DataSet\DIV2K/test" + '/SIMdata_SR_valid.txt'
+    valid_directory_file = "/home/common/zenghui/microtube1_512/" + '/SIMdata_SR_train.txt'
     SIM_valid_dataset = SIM_data_load(valid_directory_file,data_mode = data_generate_mode,normalize = True)
 
     # criterion = criterion = nn.MSELoss()
     SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=1, shuffle=True)
     # valid_loss = evaluate_valid_loss(SIM_valid_dataloader, criterion, SIMnet, device=torch.device('cpu'))
     # print('valid_loss:%f',valid_loss)
-    a, b = SIM_valid_dataset[1]
+    a, b = SIM_valid_dataset[0]
     result_net_valiated(SIMnet, a, b,normalize = True)

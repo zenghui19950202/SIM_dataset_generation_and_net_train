@@ -25,36 +25,37 @@ def estimate_SIM_pattern_and_parameters_of_multichannels(SIM_data):
         one_channel_SIM_data = SIM_data[:, i, :, :].squeeze()
         estimated_spatial_frequency, estimated_modulation_factor = estimate_SIM_pattern_parameters.calculate_spatial_frequency(
             one_channel_SIM_data * one_channel_SIM_data)
-        if experimental_parameters.upsample == True:
-            estimated_spatial_frequency = estimated_spatial_frequency / 2
-        # estimated_modulation_factor = 0.2
+        # estimated_modulation_factor = 1
         estimated_phase = estimate_SIM_pattern_parameters.calculate_phase(one_channel_SIM_data,
                                                                           estimated_spatial_frequency)
         estimated_SIM_pattern_parameters[i, :] = torch.tensor(
             [*estimated_spatial_frequency, estimated_modulation_factor, torch.tensor(estimated_phase)])
-        estimated_SIM_pattern[:, i, :, :] = (estimated_modulation_factor * torch.cos(
-            estimated_phase + 2 * math.pi * (
-                    estimated_spatial_frequency[0] * xx / image_size + estimated_spatial_frequency[
-                1] * yy / image_size)) + 1) / 2
+        if experimental_parameters.upsample == True:
+            estimated_SIM_pattern[:, i, :, :] = (estimated_modulation_factor * torch.cos(
+                estimated_phase + 2 * math.pi * (
+                        estimated_spatial_frequency[0] / 2 * xx / image_size + estimated_spatial_frequency[
+                    1] / 2 * yy / image_size)) + 1) / 2
+        else:
+            estimated_SIM_pattern[:, i, :, :] = (estimated_modulation_factor * torch.cos(
+                estimated_phase + 2 * math.pi * (
+                        estimated_spatial_frequency[0] * xx / image_size + estimated_spatial_frequency[
+                    1] * yy / image_size)) + 1) / 2
     return estimated_SIM_pattern, estimated_SIM_pattern_parameters
 
 
-def fine_adjust_SIM_pattern(input_SIM_raw_data, intial_estimated_pattern_params, delta_pattern_params, xx, yy):
-    delta_modulation = torch.zeros_like(delta_pattern_params)
-    delta_modulation[:, 2] = delta_pattern_params[:, 2]
+def fine_adjust_SIM_pattern(input_SIM_raw_data, intial_estimated_pattern_params, modulation_factor, xx, yy):
     Tanh = nn.Tanh()
-    delta_modulation = Tanh(delta_modulation)
-    pattern_params = intial_estimated_pattern_params + delta_modulation
+    delta_modulation = abs(Tanh(modulation_factor))
     # pattern_params = intial_estimated_pattern_params + delta_pattern_params
     estimated_SIM_pattern = torch.zeros_like(input_SIM_raw_data)
     channels = input_SIM_raw_data.shape[1]
     image_size = input_SIM_raw_data.shape[2]
 
     for i in range(channels):
-        estimated_spatial_frequency_x = pattern_params[i][0]
-        estimated_spatial_frequency_y = pattern_params[i][1]
-        estimated_modulation_factor = pattern_params[i][2]
-        estimated_phase = pattern_params[i][3]
+        estimated_spatial_frequency_x = intial_estimated_pattern_params[i][0]
+        estimated_spatial_frequency_y = intial_estimated_pattern_params[i][1]
+        estimated_modulation_factor = delta_modulation[i]
+        estimated_phase = intial_estimated_pattern_params[i][3]
 
         estimated_SIM_pattern[:, i, :, :] = (estimated_modulation_factor * torch.cos(
             estimated_phase + 2 * math.pi * (

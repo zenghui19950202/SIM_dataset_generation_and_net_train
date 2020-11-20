@@ -10,14 +10,16 @@ class MSE_loss(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, pattern, pattern_gt, mask):
+    def forward(self, pattern, pattern_gt, mask,normalize = True):
         num_of_channels = pattern.size()[1]
         # mean_pattern = pattern.detach().mean()
         # mean_pattern_gt = pattern_gt.detach().mean()
-        mean_pattern = pattern.mean()
-        mean_pattern_gt = pattern_gt.mean()
-        # mean_pattern = torch.tensor([1.0],device = pattern.device)
-        # mean_pattern_gt = torch.tensor([1.0],device = pattern.device)
+        if normalize == False:
+            mean_pattern = torch.tensor([1.0], device=pattern.device)
+            mean_pattern_gt = torch.tensor([1.0], device=pattern.device)
+        else:
+            mean_pattern = pattern.mean()
+            mean_pattern_gt = pattern_gt.mean()
         # mean_pattern = pattern.detach().max()
         # mean_pattern_gt = pattern.detach().max()
         if mean_pattern < 1e-20:

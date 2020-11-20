@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # author：zenghui time:2020/10/30
-
-# !/usr/bin/env python
-# -*- coding: utf-8 -*-
-# author：zenghui time:2020/10/21
-
+'''The version of program that directly optimize the SR image in spatial domain:
+I try to execute the optimization process at 3 direction respectively to avoid generating more unexpected
+residual frequency peaks in Fourier frequency domain.
+This method work well in simulation, but it seems that the optimization process on experimental data
+is quite slow, and even cannot converge'''
 from utils import *
 from models import *
 from self_supervised_learning_sr import *
