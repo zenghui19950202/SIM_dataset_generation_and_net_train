@@ -25,7 +25,7 @@ import numpy as np
 def try_gpu():
     """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
     if torch.cuda.is_available():
-        device = torch.device('cuda:1')
+        device = torch.device('cuda:4')
     else:
         device = torch.device('cpu')
     return device
@@ -63,8 +63,8 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     SSIM_list = []
     PSNR_list = []
 
-    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2,3,6])
-    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,2,3,6])
+    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data)
+    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern)
     # input_SIM_raw_data_normalized = processing_utils.pre_processing(input_SIM_raw_data)
 
     # SR_image = SIM_data[1][:,:,:,1]
@@ -202,8 +202,8 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         if (epoch + 1) % num_epochs == 0:
             SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image.detach(), 1,
                                                                            psf_reconstruction_conv)
-            # result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze()
-            result = SR_image_high_freq_filtered
+            result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze()
+            # result = SR_image_high_freq_filtered
             common_utils.plot_single_tensor_image(result)
 
             # winier_result = forward_model.winier_deconvolution(processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze(),OTF.cpu())
@@ -277,6 +277,8 @@ if __name__ == '__main__':
     train_loss, best_SR,SSIM_list,PSNR_list = train(SIMnet, SIM_data_dataloader, SIM_pattern_dataloader, net_input, criterion, num_epochs,
                                 device, lr, weight_decay, opt_over)
     # best_SR = best_SR.reshape([1, 1, best_SR.size()[0], best_SR.size()[1]])
+    if not best_SR.dim() == 4:
+        best_SR = best_SR.reshape([1, 1, best_SR.size()[0], best_SR.size()[1]])
     common_utils.save_image_tensor2pillow(abs(best_SR), save_file_directory)
     SSIM_list = torch.tensor(SSIM_list)
     torch.save(SSIM_list,save_file_directory+'SSIM')
@@ -284,7 +286,7 @@ if __name__ == '__main__':
     torch.save(PSNR_list,save_file_directory+'PSNR')
     # SIMnet.to('cpu')
     end_time = time.time()
-    # torch.save(SIMnet.state_dict(), file_directory + '/SIMnet.pkl')
+    # torch.save(SIMnet.state_di== 4 and input_tensor.shape[0] == 1)ct(), file_directory + '/SIMnet.pkl')
     print(
         'avg train rmse: %f, learning_rate:%f, batch_size:%d,weight_decay: %f,Dropout_ratio: %f, time: %f '
         % (train_loss, lr, batch_size, weight_decay, Dropout_ratio, end_time - start_time))

@@ -57,6 +57,7 @@ class SinusoidalPattern(Operations.Operation):
         self.NumPhase = data_generation_parameters['NumPhase']
         self.SNR = data_generation_parameters['SNR']
         self.f_cutoff = 1/0.61 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
+        self.f_cutoff = 2 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
 
         if image_size == None:
             self.image_size = data_generation_parameters['image_size']

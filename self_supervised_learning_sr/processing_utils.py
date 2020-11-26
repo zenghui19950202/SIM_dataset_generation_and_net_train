@@ -43,7 +43,6 @@ def pre_processing(raw_SIM_data):
         raw_SIM_slice_min = raw_SIM_slice_min / 10
         raw_SIM_slice_no_bg = raw_SIM_slice - raw_SIM_slice_min
 
-
         raw_SIM_slice_no_bg_max_list = heapq.nlargest(10, raw_SIM_slice_no_bg.detach().view(1, -1).squeeze())
         raw_SIM_slice_no_bg_max = torch.tensor([0.], device=raw_SIM_slice_no_bg.device)
 
@@ -100,6 +99,44 @@ def notch_filter(SR_image, estimated_pattern_parameters):
 
     return image_filtered_tensor
 
+def notch_filter_generate(SR_image, estimated_pattern_parameters,notch_radius = 4):
+    SR_image = SR_image.squeeze()
+    image_size = SR_image.size()
+
+    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size[0])
+    fx, fy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
+    spatial_freq = estimated_pattern_parameters[:, 0:2].squeeze()
+    notch_filter = torch.zeros_like(SR_image)
+    device = SR_image.device
+    freq_list = [-1,1]
+    input_num = spatial_freq.size()[0]
+    for i in range(3):
+        if input_num == 9:
+            spatial_freq_mean = torch.mean(spatial_freq[0 + 3 * i:3 + 3 * i, :], dim=0)
+        # elif input_num == 5:
+        #     if i == 0:
+        #         spatial_freq_mean = torch.mean(spatial_freq[0:3, :], dim=0)
+        #     else:
+        #         spatial_freq_mean = spatial_freq[2 + i, :]
+        elif input_num == 4:
+            spatial_freq_mean = spatial_freq[i, :]
+        else:
+            if i == 0:
+                spatial_freq_mean = torch.mean(spatial_freq[0:3, :], dim=0)
+            else:
+                spatial_freq_mean = spatial_freq[2 + i, :]
+        for j in freq_list:
+            fx_shift = fx - j * spatial_freq_mean[0]
+            fy_shift = fy - j * spatial_freq_mean[1]
+            fr_square = (fx_shift ** 2 + fy_shift ** 2)
+            f0 = notch_radius
+            notch_filter += torch.exp(-1 * fr_square / (4 * f0 *f0)).to(device)
+            notch_filter = torch.where(notch_filter > 0.5, torch.tensor([1.0], device=device),
+                                       torch.tensor([0.0], device=device))
+
+    notch_filter = (1- notch_filter)
+
+    return notch_filter
 
 def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters,filter_radius = 5):
     SR_image = SR_image.squeeze()
