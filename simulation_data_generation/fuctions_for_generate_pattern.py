@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
 from PIL import Image
-from utils import *
+from utils import load_configuration_parameters
 
 
 # def AddSinusoidalPattern(pipeline, probability=1):
@@ -56,6 +56,7 @@ class SinusoidalPattern(Operations.Operation):
         self.NA = data_generation_parameters['NA']
         self.NumPhase = data_generation_parameters['NumPhase']
         self.SNR = data_generation_parameters['SNR']
+        self.photon_num = data_generation_parameters['photon_num']
         self.f_cutoff = 1/0.61 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
         self.f_cutoff = 2 * self.NA / self.EmWaveLength  # The coherent cutoff frequency
 
@@ -318,6 +319,18 @@ class SinusoidalPattern(Operations.Operation):
         return image_with_noise_normalized
         # return image_with_noise_normalized
 
+    def add_poisson_noise(self, tensor_Image,photon_num):  # The type of input image is PIL
+        # if len(TensorImage)==3:
+        #      TensorImage = TensorImage.permute(1, 2, 0) # transope for matplot
+        # signal_intensity_of_image = (tensor_Image ** 2).mean()  # The mean intensity of signal
+        np_image = tensor_Image.squeeze().numpy()
+        noised_np_image = np.random.poisson(np_image/np_image.max() * photon_num)
+
+        noised_np_image_normalized = noised_np_image / noised_np_image.max()
+        tensor_image_with_noise_normalized = torch.from_numpy(noised_np_image_normalized)
+        return tensor_image_with_noise_normalized
+        # return image_with_noise_normalized
+
     def SR_image_generator(self, TensorImage):
 
         OTF = self.OTF_form(fc_ratio= self.pattern_frequency_ratio + 1)
@@ -364,7 +377,7 @@ class SinusoidalPattern(Operations.Operation):
         half_size_of_psf = int(psf.shape[0] / 2)
         half_row_of_psf = psf_tensor[half_size_of_psf]
         # a = half_row_of_psf < 1e-2
-        id = torch.arange(0, half_row_of_psf.nelement())[half_row_of_psf.gt(1e-2)]
+        id = torch.arange(0, half_row_of_psf.nelement())[half_row_of_psf.gt(1e-3)]
         psf_crop = psf_tensor[id[0]:id[-1] + 1, id[0]:id[-1] + 1]
         return psf_crop
 

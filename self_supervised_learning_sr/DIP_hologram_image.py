@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# author：zenghui time:2020/10/22
+# Using DIP(deep image prior)to achieve phase retrieval
+# author：zenghui time:2021/1/13
+
+
+from parameter_estimation import *
 from utils import *
 from models import *
 from self_supervised_learning_sr import *
@@ -13,7 +17,6 @@ import copy
 import math
 from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
-from parameter_estimation import estimate_SIM_pattern
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 from configparser import ConfigParser
 from simulation_data_generation.generate_hologram_diffraction import hologram
@@ -25,7 +28,7 @@ import numpy as np
 def try_gpu():
     """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
     if torch.cuda.is_available():
-        device = torch.device('cuda:3')
+        device = torch.device('cuda:4')
     else:
         device = torch.device('cpu')
     return device
@@ -33,30 +36,10 @@ def try_gpu():
 
 def train(net, hologram_diffraction_loader, SIM_pattern_loader, net_input, criterion, num_epochs, device, lr=None,
           weight_decay=1e-5, opt_over='net'):
-    """Train and evaluate a model with CPU or GPU."""
     print('training on', device)
     net = net.to(device)
-    temp = funcs.SinusoidalPattern(probability=1)
-    #TODO: 如果要使用实验参数估计 OTF 和 PSF 这里需要用temp = hologram(probability=1),需要自己写
-    OTF = temp.OTF
-    psf = temp.psf_form(OTF)
 
-    psf_conv = funcs.psf_conv_generator(psf,device)
-
-    OTF_reconstruction = temp.OTF_form(fc_ratio=1 + temp.pattern_frequency_ratio)
-    psf_reconstruction = temp.psf_form(OTF_reconstruction)
-    psf_reconstruction_conv = funcs.psf_conv_generator(psf_reconstruction,device)
-
-    noise = net_input.detach().clone()
-    reg_noise_std = 0.03
-    min_loss = 1e5
     image_size = [net_input.size()[2], net_input.size()[3]]
-    initial_estimated_phase_image =torch.normal(0,0.01,image_size,device=device)
-    # initial_estimated_phase_image = torch.zeros(image_size,device=device)
-
-    estimated_phase_image = initial_estimated_phase_image.clone().detach()
-    best_hologram = torch.zeros(image_size, dtype=torch.float32, device=device)
-
 
     end_flag = 0
 
@@ -72,19 +55,8 @@ def train(net, hologram_diffraction_loader, SIM_pattern_loader, net_input, crite
     # estimated_phase_image += GT_phase_image.to(device)
     hologram_diffraction_intensity_raw_data = common_utils.pick_input_data(hologram_diffraction_intensity_raw_data)
 
-    psf_radius = math.floor(psf.size()[0] / 2)
-
-    mask = torch.zeros_like(hologram_diffraction_intensity_raw_data, device=device)
-    mask[:, :, psf_radius:-psf_radius, psf_radius:-psf_radius] = 1
-
-    net_parameters = common_utils.get_params('net', net,downsampler=None,weight_decay=weight_decay)
+    net_parameters = common_utils.get_params('net', net, downsampler=None, weight_decay=weight_decay)
     optimizer_net = optim.Adam(net_parameters, lr=lr)
-
-    params = []
-    estimated_phase_image = estimated_phase_image.to(device)
-    estimated_phase_image.requires_grad = True
-    params += [{'params': estimated_phase_image, 'weight_decay': weight_decay}]
-    optimizer_pattern_params = optim.Adam(params, lr=0.001)
 
     input_diffraction_intensity_raw_data = hologram_diffraction_intensity_raw_data.to(device)
 
@@ -96,37 +68,71 @@ def train(net, hologram_diffraction_loader, SIM_pattern_loader, net_input, crite
     distance = torch.tensor([experimental_params.distance], dtype=torch.float32).to(device)
     lamda = torch.tensor([experimental_params.WaveLength], dtype=torch.float32).to(device)
 
-    xx0,xx1,yy0,yy1 = experimental_params.xx0.to(device),experimental_params.xx1.to(device),experimental_params.yy0.to(device),experimental_params.yy1.to(device)
+    xx0, xx1, yy0, yy1 = experimental_params.xx0.to(device), experimental_params.xx1.to(
+        device), experimental_params.yy0.to(device), experimental_params.yy1.to(device)
+
+
+    noise = net_input.detach().clone()
+    reg_noise_std = 0.03
+    min_loss = 1e5
+
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_net, mode='min', factor=0.9, patience=100,
+                                                           verbose=False, threshold=0.0001, threshold_mode='rel',
+                                                           cooldown=0, min_lr=1e-5, eps=1e-08)
 
     for epoch in range(num_epochs):
 
-        # optimizer_net.zero_grad()
-        # estimated_phase_image = net(net_input_noise)
-
         net.train()  # Switch to training mode
 
-        loss = torch.tensor([0.0], dtype=torch.float32, device=device)
+        net_input_noise = net_input + (noise.normal_() * reg_noise_std)
+        net_input_noise = net_input_noise.to(device)
 
-        optimizer_pattern_params.zero_grad()
+        optimizer_net.zero_grad()
 
-        # for i,d in zip(torch.arange(0,data_num-1,1) ,distance * torch.arange(1,data_num,1)):
+        estimated_phase_image = net(net_input_noise)
+        tv_loss = 1e-7 * loss_functions.tv_loss_calculate(estimated_phase_image)
+        tv_loss=0
+        estimated_phase_image = estimated_phase_image.squeeze()
+        loss = tv_loss
         for i in range(data_num):
-            d = (i+1) * distance
-            estimated_diffraction_hologram = forward_model.fresnel_propagate(estimated_phase_image, d, xx0, yy0, xx1, yy1,lamda,k)
-            estimated_diffraction_hologram_intensity = pow(estimated_diffraction_hologram[:,:,0],2) + pow(estimated_diffraction_hologram[:,:,1],2)
-            estimated_diffraction_hologram_intensity = estimated_diffraction_hologram_intensity/estimated_diffraction_hologram_intensity.max()
-            mse_loss = criterion(estimated_diffraction_hologram_intensity, input_diffraction_intensity_raw_data[:,i,:,:],torch.ones_like(estimated_diffraction_hologram_intensity))
+            d = (i + 1) * distance
+            estimated_diffraction_hologram = forward_model.fresnel_propagate(estimated_phase_image, d, xx0, yy0,
+                                                                             xx1,
+                                                                             yy1, lamda, k)
+            estimated_diffraction_hologram_intensity = pow(estimated_diffraction_hologram[:, :, 0], 2) + pow(
+                estimated_diffraction_hologram[:, :, 1], 2)
+            estimated_diffraction_hologram_intensity = estimated_diffraction_hologram_intensity / estimated_diffraction_hologram_intensity.max()
+            mse_loss = criterion(estimated_diffraction_hologram_intensity,
+                                 input_diffraction_intensity_raw_data[:, i, :, :],
+                                 torch.ones_like(estimated_diffraction_hologram_intensity))
             loss += mse_loss
-
         loss.backward()
-        optimizer_pattern_params.step()
+        optimizer_net.step()
 
         with torch.no_grad():
             train_loss = loss.float()
 
-        print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
-        # SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(SIM_raw_data.shape,estimated_pattern_parameters,delta_pattern_params,xx,yy)
-        # print(delta_pattern_params)
+        print('epoch: %d/%d, train_loss: %f  MSE_loss:%f  , tv_loss: %f' % (epoch + 1, num_epochs, train_loss, mse_loss,tv_loss ))
+        if epoch == 999:  # safe checkpoint
+            temp_loss = train_loss
+            temp_net_state_dict = copy.deepcopy(net.state_dict())
+            temp_optimizer_state_dict = copy.deepcopy(optimizer_net.state_dict())
+            checkpoint_loss = train_loss
+
+        if epoch > 1000:
+            delta_loss = train_loss - temp_loss
+            temp_loss = train_loss
+            print('delta_loss_max:%f, loss_min: %f' % (3 * delta_loss.max(), min(train_loss, temp_loss)))
+            if 3 * delta_loss > min(train_loss, temp_loss):
+                net.load_state_dict(temp_net_state_dict)
+                optimizer_net.load_state_dict(temp_optimizer_state_dict)
+                temp_loss = checkpoint_loss
+                end_flag += 1
+                print('revert:True')
+            elif epoch % 50 == 0:
+                temp_net_state_dict = copy.deepcopy(net.state_dict())
+                temp_optimizer_state_dict = copy.deepcopy(optimizer_net.state_dict())
+                checkpoint_loss = train_loss
 
         if min_loss > train_loss:
             min_loss = train_loss
@@ -135,6 +141,9 @@ def train(net, hologram_diffraction_loader, SIM_pattern_loader, net_input, crite
         if (epoch + 1) % 1000 == 0:
             common_utils.plot_single_tensor_image(estimated_phase_image)
             # common_utils.plot_single_tensor_image(SR_image_high_freq_filtered)
+
+        if end_flag > 5:
+            break
 
     return train_loss, best_estimated_phase_image
 
@@ -145,7 +154,6 @@ def init_weights(m):
 def train_net():
     pass
 if __name__ == '__main__':
-
     config = ConfigParser()
     if config.read('../configuration_hologram.ini') != []:
         config.read('../configuration_hologram.ini')
@@ -161,13 +169,6 @@ if __name__ == '__main__':
     image_size = config.getint('SIM_data_generation', 'image_size')
     opt_over = config.get('optimize_object', 'opt_over')
 
-    param_grid = {
-        'learning_rate': [0.001],
-        'batch_size': [1],
-        'weight_decay': [1e-5],
-        'Dropout_ratio': [1]
-    }
-
     SIM_data = SpeckleSIMDataLoad.SIM_data_load(train_directory_file, normalize=False, data_mode='only_raw_SIM_data')
     SIM_pattern = SpeckleSIMDataLoad.SIM_pattern_load(train_directory_file, normalize=False)
     # SIM_pattern = SIM_data_load(train_directory_file, normalize=False, data_mode='only_raw_SIM_data')
@@ -179,11 +180,8 @@ if __name__ == '__main__':
     # min_loss = 1e5
     num_epochs = 3000
 
-    random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
-    lr = random_params['learning_rate']
-    batch_size = random_params['batch_size']
-    weight_decay = random_params['weight_decay']
-    Dropout_ratio = random_params['Dropout_ratio']
+    lr = 0.001
+    weight_decay =1e-5
 
     device = try_gpu()
     # criterion = nn.MSELoss()
@@ -193,21 +191,35 @@ if __name__ == '__main__':
     # SIMnet = Networks_Unet_GAN.UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=False,
     #                                                 input_mode='only_input_SIM_images', use_dropout=False)
     SIMnet = Unet_NC2020.UNet(num_raw_SIMdata, 1, input_mode='input_all_images', LR_highway=False)
-
+    # SIMnet = resnet_backbone_net._resnet('resnet34', resnet_backbone_net.BasicBlock, [1, 1, 1, 1], input_mode='only_input_SIM_images',
+    #                             LR_highway=False, input_nc=num_raw_SIMdata, pretrained=False, progress=False, )
+    # SIMnet = Unet_NC2020.UNet(num_raw_SIMdata, 1, input_mode=data_input_mode, LR_highway=LR_highway_type)
+    # SIMnet.apply(init_weights)
+    # SIMnet = nn.Sequential()
     start_time = time.time()
 
     net_input = common_utils.get_noise(num_raw_SIMdata+1, 'noise', (image_size, image_size), var=0.1)
     net_input = net_input.to(device).detach()
 
+    # net_input = SIM_data[0][1][:,:,0].squeeze()
+    # net_input = torch.stack([net_input,net_input],0)
+    # net_input = net_input.view(1,2,256,256)
+    # net_input.requires_grad = True
+    train_loss, best_hologram = train(SIMnet, SIM_data_dataloader, SIM_pattern_dataloader, net_input, criterion, num_epochs,
+                                device, lr, weight_decay, opt_over)
+    best_hologram = best_hologram.reshape([1, 1, image_size, image_size])
+    common_utils.save_image_tensor2pillow(best_hologram, save_file_directory)
 
-    train_loss, best_hologram = train(SIMnet, SIM_data_dataloader,SIM_pattern_dataloader, net_input, criterion, num_epochs,
-                                device, lr, weight_decay,opt_over)
     best_hologram = best_hologram.reshape([1, 1, image_size, image_size])
     common_utils.save_image_tensor2pillow(best_hologram, save_file_directory)
     # SIMnet.to('cpu')
     end_time = time.time()
     # torch.save(SIMnet.state_dict(), file_directory + '/SIMnet.pkl')
     print(
-        'avg train rmse: %f, learning_rate:%f, batch_size:%d,weight_decay: %f,Dropout_ratio: %f, time: %f '
-        % (train_loss, lr, batch_size, weight_decay, Dropout_ratio, end_time - start_time))
+        'avg train rmse: %f, learning_rate:%f, weight_decay: %f, time: %f '
+        % (train_loss, lr, weight_decay, end_time - start_time))
 
+    # a = SIM_train_dataset[0]
+    # image = a[0]
+    # image1 = image.view(1, image.shape[0], image.shape[1], image.shape[2])
+    # print(SIMnet(image1))

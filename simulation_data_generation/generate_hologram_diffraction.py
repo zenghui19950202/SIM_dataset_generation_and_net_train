@@ -5,7 +5,7 @@ import torch
 import math
 from torchvision import transforms
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
-from utils import *
+from utils import common_utils
 import numpy as np
 from simulation_data_generation import Pipeline_speckle
 from numpy.fft import fft2

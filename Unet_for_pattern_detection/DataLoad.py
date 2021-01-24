@@ -27,7 +27,8 @@ class SIMdata_pattern_pairs(data.Dataset):
     def __getitem__(self, index):
         txt_line = self.content[index]
         SIM_data_directory = txt_line.split()[0]
-        image_format = txt_line.split()[1]
+        image_number = int(txt_line.split()[1])
+        image_format = txt_line.split()[2]
 
         SIMdata_directoty = SIM_data_directory \
                              + "_SIMdata_" \
@@ -53,18 +54,23 @@ class SIMdata_pattern_pairs(data.Dataset):
         SIMdata_image_tensor = transform(SIMdata_PIL)[0,:,:]
         pattern_image_tensor = transform(pattern_PIL)[0, :, :]
 
-        return SIMdata_image_tensor,pattern_image_tensor
+        return SIMdata_image_tensor.unsqueeze(0),pattern_image_tensor.unsqueeze(0)
 
     def __len__(self):
         return len(self.content)
 
 if __name__ == '__main__':
     directory_json_file = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown\\test\directories_of_images.json"
-    directory_txt_file = 'D:\DataSet\DIV2K\DIV2K/train.txt'
+    directory_txt_file = '/data/zh/test/train.txt'
+
+
     SIM_dataset=SIMdata_pattern_pairs(directory_txt_file)
     a,b = SIM_dataset[0]
     a = a * 0.5 + 0.5
+
     a_PIL = transforms.ToPILImage()(a).convert('RGB')
     b = b * 0.5 + 0.5
     b_PIL = transforms.ToPILImage()(b).convert('RGB')
-    SIM_data_loader= DataLoader(SIM_dataset, batch_size=4,shuffle=True)
+
+
+    # SIM_data_loader= DataLoader(SIM_dataset, batch_size=4,shuffle=True)

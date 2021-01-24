@@ -9,10 +9,11 @@ from torch.utils.data import DataLoader
 from simulation_data_generation import SRimage_metrics
 from configparser import ConfigParser
 from models import *
-from utils import common_utils
+# from utils import common_utils
+from utils import *
+import os
 
-
-def result_net_valiated(SIMnet, input_SIM_images, HR_LR_image, normalize = True):
+def result_net_valiated(SIMnet, input_SIM_images, HR_LR_image, output_dir,normalize = True,):
     LR_image = HR_LR_image[:, :, 1]
     HR_image = HR_LR_image[:, :, 0]
     data_num = config.getint('SIM_data_generation', 'data_num')
@@ -39,7 +40,7 @@ def result_net_valiated(SIMnet, input_SIM_images, HR_LR_image, normalize = True)
     # image_PIL = transforms.ToPILImage()(result_image).convert('RGB')
     # image_PIL.show()
     common_utils.plot_single_tensor_image(result_image)
-    common_utils.save_image_tensor2pillow(result_image.unsqueeze(0).unsqueeze(0),'/home/common/zenghui/microtube1_512/')
+    common_utils.save_image_tensor2pillow(result_image.unsqueeze(0).unsqueeze(0),output_dir)
     # image = HR_LR_image[:, :, 1] * 0.5 + 0.5
     # image_PIL = transforms.ToPILImage()(image).convert('RGB')
     # image_PIL.show()
@@ -67,15 +68,18 @@ def evaluate_valid_loss(data_iter, criterion, net, device=torch.device('cpu')):
 
 
 if __name__ == '__main__':
+    train_net_parameters = load_configuration_parameters.load_train_net_config_paras()
+    data_generate_mode = train_net_parameters['data_generate_mode']
+    net_type = train_net_parameters['net_type']
+    data_input_mode = train_net_parameters['data_input_mode']
+    LR_highway_type = train_net_parameters['LR_highway_type']
+    data_num = train_net_parameters['data_num']
+
     config = ConfigParser()
     config.read('configuration.ini')
-    SourceFileDirectory = config.get('image_file', 'varification_file_directory')
+    SourceFileDirectory = config.get('image_file', 'verification_file_directory')
 
-    num_raw_SIMdata, output_nc, num_downs = 9, 1, 5
-    data_generate_mode = config.get('data', 'data_generate_mode')
-    data_input_mode = config.get('data', 'data_input_mode')
-    net_type = config.get('net', 'net_type')
-    LR_highway_type = config.get('LR_highway', 'LR_highway_type')
+    num_raw_SIMdata, output_nc, num_downs = data_num, 1, 5
 
     SIMnet = resnet_backbone_net._resnet('resnet34', resnet_backbone_net.BasicBlock, [1, 1, 1, 1],
                                          input_mode=data_input_mode, LR_highway=LR_highway_type,
@@ -86,11 +90,12 @@ if __name__ == '__main__':
     # SIMnet.load_state_dict(torch.load('F:\PHD\SIMDataSet/SIMnet.pkl'))
     # SIMnet = UNet(num_raw_SIMdata, 1, input_mode=data_input_mode, LR_highway=LR_highway_type)
     SIMnet.load_state_dict(torch.load(
-        '/home/common/zenghui/train_result/resnet_SIM_and_sum_images_only_input_SIM_images_add/lr_0.0003num_epochs_200batch_size_32weight_decay_1e-05//SIMnet.pkl',map_location='cuda:0'))
+        '/home/zh/self_supervised_learning_SR/train_result/resnet_SIM_and_sum_images_only_input_SIM_images_add_11_09/lr_0.0003num_epochs_200batch_size_32weight_decay_1e-05/SIMnet.pkl',map_location='cuda:7'))
 
     # train_directory_file = SourceFileDirectory + '/SIMdata_pattern_pairs_train.txt'
     valid_directory_file = "D:\DataSet\DIV2K/test"+ '/SIMdata_SR_train.txt'
     valid_directory_file = "/home/common/zenghui/microtube1_512/" + '/SIMdata_SR_train.txt'
+    valid_directory_file = SourceFileDirectory + '/SIMdata_SR_train.txt'
     SIM_valid_dataset = SIM_data_load(valid_directory_file,data_mode = data_generate_mode,normalize = True)
 
     # criterion = criterion = nn.MSELoss()
@@ -98,4 +103,5 @@ if __name__ == '__main__':
     # valid_loss = evaluate_valid_loss(SIM_valid_dataloader, criterion, SIMnet, device=torch.device('cpu'))
     # print('valid_loss:%f',valid_loss)
     a, b = SIM_valid_dataset[0]
-    result_net_valiated(SIMnet, a, b,normalize = True)
+    output_dir = os.path.dirname(valid_directory_file)
+    result_net_valiated(SIMnet, a, b,output_dir = output_dir,normalize = True,)

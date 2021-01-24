@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # author：zenghui time:2020/9/9
+from parameter_estimation import *
 from utils import *
 from models import *
 from self_supervised_learning_sr import *
@@ -13,7 +14,6 @@ import copy
 import math
 from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
-from self_supervised_learning_sr import estimate_SIM_pattern
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 
 # import self_supervised_learning_sr.estimate_SIM_pattern
@@ -93,7 +93,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     input_SIM_raw_data = input_SIM_raw_data.to(device)
     input_SIM_pattern = input_SIM_pattern.to(device)
     temp_input_SIM_pattern = temp_input_SIM_pattern.to(device)
-    # temp_input_SIM_pattern = input_SIM_pattern
+    temp_input_SIM_pattern = input_SIM_pattern
 
     count_epoch = 0
     switch_flag = 1
@@ -127,7 +127,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
 
         SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image, 1, psf_reconstruction_conv)
         mse_loss = criterion(SIM_raw_data_estimated,input_SIM_raw_data, mask)
-
+        residual_peak_loss = 1e-5 * loss_functions.residual_peak_loss(SR_image,estimated_pattern_parameters)
         if end_flag > 1:
             if switch_flag == 1:
                 loss = mse_loss
@@ -141,7 +141,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
             if count_epoch % 200 ==0:
                 switch_flag = switch_flag * -1
         else:
-            loss = mse_loss + tv_loss
+            loss = mse_loss + tv_loss + residual_peak_loss
             loss.backward()
             optimizer_net.step()
 
@@ -149,7 +149,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         with torch.no_grad():
             train_loss = loss.float()
 
-        print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
+        print('epoch: %d/%d, train_loss: %f  MSE_loss:%f , peak_loss: %f , tv_loss: %f' % (epoch + 1, num_epochs, train_loss, mse_loss, residual_peak_loss,tv_loss ))
         # SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(input_SIM_raw_data,estimated_pattern_parameters,delta_pattern_params,xx,yy)
         # print(delta_pattern_params)
         if epoch == 999:  # safe checkpoint
@@ -194,8 +194,10 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
             # common_utils.plot_image_grid([out_HR_np[0, :, :].reshape(1, out_HR_np.shape[1], -1), out_HR_np[3, :, :].reshape(1, out_HR_np.shape[1], -1),
             #                               out_HR_np[6,:,:].reshape(1,out_HR_np.shape[1],-1)], factor=13, nrow=3)
             # SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
-            result = SR_image_high_freq_filtered.squeeze()[psf_radius:-psf_radius, psf_radius:-psf_radius]
-            # result = SR_image_high_freq_and_notch_filtered[psf_radius:-psf_radius, psf_radius:-psf_radius]
+            # result = SR_image_high_freq_filtered.squeeze()[psf_radius:-psf_radius, psf_radius:-psf_radius]
+            result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered,
+                                                                            estimated_pattern_parameters).squeeze()[psf_radius:-psf_radius, psf_radius:-psf_radius]
+            # result = SR_image_high_freq_filtered[psf_radius:-psf_radius, psf_radius:-psf_radius]
             common_utils.plot_single_tensor_image(result)
 
 
@@ -238,7 +240,7 @@ if __name__ == '__main__':
 
     random.seed(60)  # 设置随机种子
     # min_loss = 1e5
-    num_epochs = 10000
+    num_epochs = 3000
 
     random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
     lr = random_params['learning_rate']

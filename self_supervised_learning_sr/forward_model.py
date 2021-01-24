@@ -6,7 +6,7 @@ import math
 from PIL import Image
 from torchvision import transforms
 from simulation_data_generation.generate_hologram_diffraction import hologram
-from utils import *
+from utils import common_utils
 import torch.nn as nn
 
 

@@ -546,7 +546,10 @@ class UnetSkipConnectionBlock(nn.Module):
                     out = Tanh(conv1x1(concat_data))
                     return out
                 else:
-                    return self.model(x[:,0:-1,:,:])
+                    if x.size(1) == 1:
+                        return self.model(x[:, :, :, :])
+                    else:
+                        return self.model(x[:, 0:-1, :, :])
             elif self.input_mode == 'input_all_images':
                 if self.LR_highway == 'add':
                     y = self.model(x)

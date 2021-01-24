@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# author：zenghui time:2020/6/16
+# author：zenghui time:2020/12/12
+
 from models import *
 from utils import *
 import torch
@@ -13,6 +14,8 @@ from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 import os
 from early_stopping.pytorchtools import EarlyStopping
+from Unet_for_pattern_detection.DataLoad import SIMdata_pattern_pairs
+import torchvision.models.resnet as resnet
 
 def try_gpu():
     """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
@@ -30,7 +33,9 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
     print('training on', device)
     # nn.DataParallel(net,device_ids=[0,1,2,3])
     # nn.DataParallel(net, device_ids=[0])
-    net = net.to(device)
+    # net = net.to(device)
+    net = nn.DataParallel(net)
+    net = net.cuda()
     # optimizer = optim.SGD(net.parameters(), lr=lr)
     weight_p, bias_p = [], []
     for name, p in net.named_parameters():
@@ -56,12 +61,16 @@ def train(net, train_iter, test_iter, criterion, num_epochs, batch_size, device,
     for epoch in range(num_epochs):
         net.train()  # Switch to training mode
         n, start = 0, time.time()
-        train_l_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
-        train_acc_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
+        # train_l_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
+        # train_acc_sum = torch.tensor([0.0], dtype=torch.float32, device=device)
+        train_l_sum = torch.tensor([0.0], dtype=torch.float32).cuda()
+        train_acc_sum = torch.tensor([0.0], dtype=torch.float32).cuda()
+
 
         for X, y in train_iter:
             optimizer.zero_grad()
-            X, y = X.to(device), y.to(device)
+            # X, y = X.to(device), y.to(device)
+            X, y = X.cuda(), y.cuda()
             y_hat = net(X)
             y_hat = y_hat.squeeze()
             y = y.squeeze()
@@ -97,11 +106,13 @@ def init_weights(m):
 def evaluate_valid_loss(data_iter, criterion, net, device=torch.device('cpu')):
     net.eval()
     """Evaluate accuracy of a model on the given data set."""
-    loss_sum, PSNR, n, = torch.tensor([0], dtype=torch.float32, device=device), torch.tensor([0], dtype=torch.float32,
-                                                                                             device=device), 0
+    # loss_sum, PSNR, n, = torch.tensor([0], dtype=torch.float32, device=device), torch.tensor([0], dtype=torch.float32,
+    #                                                                                          device=device), 0
+    loss_sum, PSNR, n, = torch.tensor([0], dtype=torch.float32).cuda(), torch.tensor([0], dtype=torch.float32).cuda(), 0
     for X, y in data_iter:
         # Copy the data to device.
-        X, y = X.to(device), y.to(device)
+        # X, y = X.to(device), y.to(device)
+        X, y = X.cuda(), y.cuda()
         with torch.no_grad():
             y = y.float()
             y_hat = net(X)
@@ -113,54 +124,18 @@ def evaluate_valid_loss(data_iter, criterion, net, device=torch.device('cpu')):
     return loss_sum / n, PSNR / n
 
 
-def calculate_psnr(img_SR, img_HR_LR):
-    img_SR = (img_SR * 0.5 + 0.5)
-    img_HR_LR = (img_HR_LR * 0.5 + 0.5)
-    if len(img_HR_LR.shape) == 4:
-        img_HR = img_HR_LR[:, :, :, 0]
-        L2_diff = torch.pow((img_SR - img_HR), 2)
-        MSE = L2_diff.mean(dim=1).mean(dim=1)
-        img_HR_max = img_HR.max(dim=1)[0].max(dim=1)[0]
-    elif len(img_HR_LR.shape) == 3:
-        img_HR = img_HR_LR[:, :, 0]
-        L2_diff = torch.pow((img_SR - img_HR), 2)
-        MSE = L2_diff.mean()
-        img_HR_max = img_HR.max()
-    PSNR = torch.mean(20 * torch.log10(img_HR_max / torch.pow(MSE, 1 / 2)))
+def calculate_psnr(pattern_estimated, pattern_gt):
+    pattern_estimated = (pattern_estimated * 0.5 + 0.5)
+    pattern_gt = (pattern_gt * 0.5 + 0.5)
+    L2_diff = torch.pow((pattern_estimated - pattern_gt), 2)
+    MSE = L2_diff.mean()
+    pattern_gt_max = pattern_gt.max()
+    PSNR = torch.mean(20 * torch.log10(pattern_gt_max / torch.pow(MSE, 1 / 2)))
     return PSNR
 
 
-class SR_loss(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, SR_image, HR_LR_image, loss_ratio=0.8):
-        if len(HR_LR_image.shape) == 4:
-            loss = (1 - loss_ratio) * torch.mean(
-                torch.pow((SR_image - HR_LR_image[:, :, :, 0]), 2)) + loss_ratio * torch.mean(
-                torch.pow((SR_image - HR_LR_image[:, :, :, 0] + HR_LR_image[:, :, :, 1]), 2))
-        elif len(HR_LR_image.shape) == 3:
-            loss = (1 - loss_ratio) * torch.mean(
-                torch.pow((SR_image - HR_LR_image[:, :, 0]), 2)) + loss_ratio * torch.mean(
-                torch.pow((SR_image - HR_LR_image[:, :, 0] + HR_LR_image[:, :, 1]), 2))
-        return loss
-
-
-class MSE_loss(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, SR_image, HR_LR_image):
-        if len(HR_LR_image.shape) == 4:
-            loss = torch.mean(
-                torch.pow((SR_image - HR_LR_image[:, :, :, 0]), 2))
-        elif len(HR_LR_image.shape) == 3:
-            loss = torch.mean(
-                torch.pow((SR_image - HR_LR_image[:, :, 0]), 2))
-        return loss
-
-
 if __name__ == '__main__':
+    os.environ['CUDA_VISIBLE_DEVICES'] = '4,5,6,7'
     train_net_parameters = load_configuration_parameters.load_train_net_config_paras()
     train_directory_file = train_net_parameters['train_directory_file']
     valid_directory_file = train_net_parameters['valid_directory_file']
@@ -173,14 +148,14 @@ if __name__ == '__main__':
     data_num = train_net_parameters['data_num']
 
     param_grid = {
-        'learning_rate': [0.000168,0.0002,0.0001,0.0003,0.00005],
-        'batch_size': [16],
+        'learning_rate': [0.0001,0.001,0.01],
+        'batch_size': [128,256],
         'weight_decay': [1e-5],
         'Dropout_ratio': [1]
     }
 
-    SIM_train_dataset = SIM_data_load(train_directory_file, data_mode=data_generate_mode)
-    SIM_valid_dataset = SIM_data_load(valid_directory_file, data_mode=data_generate_mode)
+    SIM_train_dataset = SIMdata_pattern_pairs(train_directory_file)
+    SIM_valid_dataset = SIMdata_pattern_pairs(valid_directory_file)
 
     random.seed(50)  # 设置随机种子
     min_loss = 1e5
@@ -202,27 +177,21 @@ if __name__ == '__main__':
             batch_size) + 'weight_decay_' + str(weight_decay)
 
         device = try_gpu()
-        # criterion = nn.MSELoss()
-        criterion = MSE_loss()
 
-        # SIM_train_dataloader = DataLoader(SIM_train_dataset, batch_size=batch_size,
-        #                                   shuffle=True)
-        # SIM_valid_dataloader = DataLoader(SIM_valid_dataset, batch_size=batch_size,
-        #                                   shuffle=True)
-        SIM_train_dataloader = DataLoader(SIM_train_dataset, num_workers=4, pin_memory=True, batch_size=batch_size,
+        # criterion = MSE_loss()
+        criterion = nn.MSELoss()
+
+        SIM_train_dataloader = DataLoader(SIM_train_dataset, num_workers=8, pin_memory=True, batch_size=batch_size,
                                           shuffle=True)
-        SIM_valid_dataloader = DataLoader(SIM_valid_dataset, num_workers=4, pin_memory=True, batch_size=batch_size,
+        SIM_valid_dataloader = DataLoader(SIM_valid_dataset, num_workers=8, pin_memory=True, batch_size=batch_size,
                                           shuffle=True)
 
-        num_raw_SIMdata, output_nc, num_downs = data_num, 1, 5
+        num_raw_SIMdata, output_nc, num_downs = 1, 1, 5
         if net_type == 'Unet':
             SIMnet = Networks_Unet_GAN.UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=LR_highway_type,
                                    input_mode=data_input_mode, use_dropout=False)
         elif net_type == 'resnet':
-            SIMnet = resnet_backbone_net._resnet('resnet34', resnet_backbone_net.BasicBlock, [1, 1, 1, 1],
-                                        input_mode=data_input_mode, LR_highway=LR_highway_type,
-                                        input_nc=num_raw_SIMdata,
-                                        pretrained=False, progress=False, )
+            SIMnet = resnet.resnet101()
         elif net_type == 'wide_Unet':
             SIMnet = Unet_NC2020.UNet(num_raw_SIMdata, 1, input_mode=data_input_mode, LR_highway=LR_highway_type)
         else:

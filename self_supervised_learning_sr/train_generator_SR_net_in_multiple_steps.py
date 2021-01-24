@@ -5,7 +5,7 @@
 # I try to guide the net to learn the low frequency information at the beginning 5000
 # epochs and then based on this low frequency information and SIM data to learn high frequency information
 # it seems that the method at 120 row cannot complete the target
-
+from parameter_estimation import *
 from utils import *
 from models import *
 from self_supervised_learning_sr import *
@@ -18,10 +18,8 @@ import copy
 import math
 from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
-from self_supervised_learning_sr import estimate_SIM_pattern
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 
-# import self_supervised_learning_sr.estimate_SIM_pattern
 import numpy as np
 
 

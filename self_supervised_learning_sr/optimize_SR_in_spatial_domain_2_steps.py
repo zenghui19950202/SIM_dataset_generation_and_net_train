@@ -4,7 +4,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # author：zenghui time:2020/10/21
-
+from parameter_estimation import *
 from utils import *
 from models import *
 from self_supervised_learning_sr import *
@@ -17,7 +17,6 @@ import copy
 import math
 from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
-from self_supervised_learning_sr import estimate_SIM_pattern
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 
 # import self_supervised_learning_sr.estimate_SIM_pattern

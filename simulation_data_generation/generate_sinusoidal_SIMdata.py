@@ -29,4 +29,4 @@ if __name__ == '__main__':
     # p = Pipeline_speckle.Pipeline_speckle(source_directory=valid_directory, output_directory="../SIMdata_SR_valid")
     # p.add_operation(Crop(probability=1, width=image_size, height=image_size, centre=False))
     # p.add_operation(SinusoidalPattern(probability=1))
-    # p.sample(sample_num_valid, multi_threaded=False, data_type='valid', data_num=data_num)
+    # p.sample(sample_num_valid, multi_threaded=True, data_type='valid', data_num=data_num)

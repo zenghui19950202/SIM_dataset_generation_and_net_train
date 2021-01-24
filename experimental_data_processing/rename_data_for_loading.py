@@ -106,4 +106,4 @@ def crop_center(img,crop_size):
     return img[starty:(starty+crop_size), startx:(startx+crop_size)]
 if __name__ == '__main__':
     # rename_data_for_loading('/home/common/zenghui/2/', LR_name ='AVG_raw-530nm', HR_name = 'AVG_raw-530nm' )
-    rename_data_for_loading('/home/common/Zenghui/test_for_self_9_frames_supervised_SR_net/microtube1/',data_name ='0000000' , LR_name ='WideField', HR_name = 'UnapodizedReconstruction' )
+    rename_data_for_loading('/data/zh/self_supervised_learning_SR/test_for_self_9_frames_supervised_SR_net/xipeng_data1/',data_name ='0000000' , LR_name ='00000001', HR_name = '00000001' )

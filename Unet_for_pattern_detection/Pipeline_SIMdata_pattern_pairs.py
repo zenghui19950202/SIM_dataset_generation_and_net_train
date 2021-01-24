@@ -13,19 +13,20 @@ import copy
 from torchvision import transforms
 import numpy as np
 import math
+from simulation_data_generation import Pipeline_speckle
+from Unet_for_pattern_detection import generate_sinusoidal_SIMdata_and_pattern_pairs
 
 
-class Pipeline_SIMdata_pattern_pairs(Pipeline):
+class Pipeline_SIMdata_pattern_pairs(Pipeline_speckle.Pipeline_speckle):
 
     def __init__(self, source_directory=None, output_directory="output", save_format=None):
        super(Pipeline_SIMdata_pattern_pairs,self).__init__(source_directory=source_directory, output_directory=output_directory, save_format=save_format)
        self.source_directory=source_directory
 
-       self.train_txt_directory = os.path.dirname(self.source_directory) + '/train.txt'
-       self.valid_txt_directory = os.path.dirname(self.source_directory) + '/valid.txt'
+       self.train_txt_directory = os.path.dirname(output_directory) + '/SIMdata_SR_train.txt'
+       self.valid_txt_directory = os.path.dirname(output_directory) + '/SIMdata_SR_valid.txt'
 
-
-    def sample(self, n, multi_threaded=True,data_ratio=0.8):
+    def sample(self, n, multi_threaded=True, data_type='train', data_num=16):
         """
         Generate :attr:`n` number of samples from the current pipeline.
 
@@ -47,7 +48,16 @@ class Pipeline_SIMdata_pattern_pairs(Pipeline):
         :return: None
         """
         augmentor_images = list(range(n))
-        self.data_ratio = data_ratio
+        self.data_num = data_num
+        self.data_type = data_type
+
+        if self.data_type == 'train':
+            self.txt_directory = self.train_txt_directory
+        elif self.data_type == 'valid':
+            self.txt_directory = self.valid_txt_directory
+        else:
+            raise Exception("error data_type")
+
         if len(self.augmentor_images) == 0:
             raise IndexError("There are no images in the pipeline. "
                              "Add a directory using add_directory(), "
@@ -61,25 +71,6 @@ class Pipeline_SIMdata_pattern_pairs(Pipeline):
         else:
             for i in range(n):
                 augmentor_images[i] = copy.deepcopy(random.choice(self.augmentor_images))
-
-        train_image_num = round(data_ratio* n)
-        image_num = 0
-        for augmentor_image in augmentor_images:
-            image_name = os.path.basename(augmentor_image.image_path).split('.')[0]
-            image_format = os.path.basename(augmentor_image.image_path).split('.')[1]
-            UUID=uuid.uuid4()
-            image_name = image_name+'-'+str(UUID)
-            if image_num<round(train_image_num):
-                txt_directory=self.train_txt_directory
-                save_directory = os.path.join(augmentor_image.output_directory, image_name)
-            else:
-                txt_directory = self.valid_txt_directory
-                save_directory = os.path.join(augmentor_image.output_directory, image_name)
-            f = open(txt_directory,'a')
-            augmentor_image.new_name = image_name
-            f.write(save_directory  + '\t' + image_format + '\n')
-            f.close()
-            image_num=image_num+1
 
         if multi_threaded:
             # TODO: Restore the functionality (appearance of progress bar) from the pre-multi-thread code above.
@@ -156,47 +147,49 @@ class Pipeline_SIMdata_pattern_pairs(Pipeline):
             if r <= operation.probability:
                 if operation.__class__ == Augmentor.Operations.Crop:
                     Crop_image_is_background = True
-                    while Crop_image_is_background:
+                    count_num = 0
+                    while Crop_image_is_background and count_num < 10:
                         temp_images = operation.perform_operation(images)
                         tensor_temp_images = transforms.ToTensor()(temp_images[0].convert('L'))
                         entropy = self.get_entropy(tensor_temp_images.squeeze())
-                        if entropy > 7:
+                        if entropy > 5.5:
                             Crop_image_is_background = False
                             images = temp_images
+                        count_num += 1
+                elif operation.__str__() ==  'sinusoidal_SIMdata_pattern_pair':
+                    images,parameters = operation.perform_operation(images)
                 else:
                     images = operation.perform_operation(images)
 
-            # file_name = os.path.basename(augmentor_image.image_path).split('.')[0]
-
-            file_name = augmentor_image.new_name
+        try:
+            image_name = os.path.basename(augmentor_image.image_path).split('.')[0]
             image_format = os.path.basename(augmentor_image.image_path).split('.')[1]
+            UUID = uuid.uuid4()
+            image_name = image_name + '-' + str(UUID)
+            save_directory = os.path.join(augmentor_image.output_directory, image_name)
+            f = open(self.txt_directory, 'a')
+            augmentor_image.new_name = image_name
+            file_name = image_name
+            f.write(save_directory + '\t' + str(self.data_num) + '\t' + image_format + '\t' + str(parameters[0]) + '\t' + str(parameters[1]) + '\t' + str(parameters[2]) + '\t' +str(parameters[3]) + '\t' + '\n')
+            f.close()
 
-            try:
-                for i in range(len(images)):
-                    if i == 0:
-                        save_name =  file_name\
-                                    +"_SIMdata_"\
-                                    +'.' + image_format
-                        images[i].save(os.path.join(augmentor_image.output_directory, save_name))
-                    else:
-                        save_name = file_name\
-                                    +"_pattern_"\
-                                    +'.'+ image_format
-                        images[i].save(os.path.join(augmentor_image.output_directory, save_name))
-
-            except IOError as e:
-                print("Error writing %s, %s. Change save_format to PNG?" % ('LR', e.message))
-                print("You can change the save format using the set_save_format(save_format) function.")
-                print("By passing save_format=\"auto\", Augmentor can save in the correct format automatically.")
+            for i in range(len(images)):
+                if i == 0:
+                    save_name =  file_name\
+                                +"_SIMdata_"\
+                                +'.' + image_format
+                    images[i].save(os.path.join(augmentor_image.output_directory, save_name))
+                else:
+                    save_name = file_name\
+                                +"_pattern_"\
+                                +'.'+ image_format
+                    images[i].save(os.path.join(augmentor_image.output_directory, save_name))
 
 
-        # TODO: Fix this really strange behaviour.
-        # As a workaround, we can pass the same back and basically
-        # ignore the multi_threaded parameter completely for now.
-        # if multi_threaded:
-        #   return os.path.basename(augmentor_image.image_path)
-        # else:
-        #   return images[0]  # Here we return only the first image for the generators.
+        except IOError as e:
+            print("Error writing %s, %s. Change save_format to PNG?" % ('LR', e.message))
+            print("You can change the save format using the set_save_format(save_format) function.")
+            print("By passing save_format=\"auto\", Augmentor can save in the correct format automatically.")
 
-        # return images[0]  # old method.
+
         return images[0]

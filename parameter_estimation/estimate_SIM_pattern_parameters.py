@@ -11,6 +11,7 @@ import torch
 import numpy as np
 from PIL import Image
 from torchvision import transforms
+import matplotlib.pyplot as plt
 # from scipy.optimize import minimize
 # from scipy.interpolate import griddata
 # from torch.nn import functional as F
@@ -46,14 +47,21 @@ def calculate_spatial_frequency (image):
     image = image.squeeze()
     image_size = image.size()[0]
     experimental_parameters = SinusoidalPattern(probability = 1,image_size = image_size)
+    OTF = experimental_parameters.OTF.numpy()
+
     image_np = image.detach().numpy()
     fft_numpy_image = fftshift(fft2(image_np, axes=(0, 1)), axes=(0, 1))
     abs_fft_np_image = abs(fft_numpy_image)
-    f0 = 0.5 * experimental_parameters.f_cutoff
+
+    deconv_fft =  abs_fft_np_image * (OTF / (OTF * OTF + 0.04))
+
+    I0 = abs_fft_np_image.max()
+    f0 = 0.4 * experimental_parameters.f_cutoff
     f = experimental_parameters.f
+    fx = experimental_parameters.fx
     mask_high_freq = torch.where(f > f0, torch.Tensor([1]), torch.Tensor([0])).numpy()
-    mask_right_half = torch.where(f > 0, torch.Tensor([1]), torch.Tensor([0])).numpy()
-    filtered_fft_raw_SIM_imag = abs_fft_np_image * mask_high_freq * mask_right_half
+    mask_right_half = torch.where(fx >= 0, torch.Tensor([1]), torch.Tensor([0])).numpy()
+    filtered_fft_raw_SIM_imag = deconv_fft * mask_high_freq * mask_right_half
     high_freq_fft_raw_SIM_imag = fft_numpy_image * mask_high_freq
 
     peak_position_pixel = np.unravel_index(np.argmax(filtered_fft_raw_SIM_imag), filtered_fft_raw_SIM_imag.shape)
@@ -67,7 +75,7 @@ def calculate_spatial_frequency (image):
     center_position = [math.ceil(image_size[0] / 2),math.ceil(image_size[1] / 2)]
     pixel_frequency = frequency_peak - torch.tensor(center_position)
 
-    return pixel_frequency,estimated_modulation_facotr
+    return pixel_frequency,estimated_modulation_facotr,I0
 
 # def find_frequency_peak(image_np ,experimental_parameters):
 #     # half_image_size = experimental_parameters.image_size / 2
@@ -198,6 +206,32 @@ def minus_interp(x,f1):
 #     # abs_fft_translated_image_tensor = torch.from_numpy(normalized_translated_fft_image_np)
 #     # common_utils.plot_single_tensor_image(abs_fft_translated_image_tensor)
 #     return shift_correlation
+
+def calculate_modulation_factor(one_channel_SIM_data,estimated_spatial_frequency,estimated_phase):
+    image_np = one_channel_SIM_data.detach().numpy()
+    image_size = image_np.shape[0]
+    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size)
+    xx, yy, _, _ = experimental_parameters.GridGenerate(image_size, grid_mode='pixel')
+    image_np_times_phase_gradient = image_np * np.exp(-1j * 2 * math.pi * (estimated_spatial_frequency[0]/image_size * xx + estimated_spatial_frequency[1]/image_size * yy).numpy())
+    translated_fft_image_np = fftshift(fft2(image_np_times_phase_gradient, axes=(0, 1)), axes=(0, 1))
+
+    fft_image_np = fftshift(fft2(image_np, axes=(0, 1)), axes=(0, 1))
+    x0 = int(image_size/2)
+    y0 = int(image_size / 2)
+    Dk = translated_fft_image_np[x0,y0]
+    D0 = fft_image_np[x0,y0]
+    S0 = abs(D0)
+    m_S0_Sinphase_Hk= np.imag(Dk) * 2
+
+    # plt.imshow(np.log(abs(translated_fft_image_np)+1))
+
+    f0 = experimental_parameters.f_cutoff
+    delta_fx = experimental_parameters.delta_fx
+    f = torch.norm(estimated_spatial_frequency) * delta_fx
+    Hk = (2 / math.pi) * (torch.acos(f / f0) - (f / f0) * (pow((1 - (f / f0) ** 2), 0.5)))
+    m = m_S0_Sinphase_Hk / S0 / Hk / math.sin(estimated_phase)
+
+    return m
 
 
 if __name__ == '__main__':

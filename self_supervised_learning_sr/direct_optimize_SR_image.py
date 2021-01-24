@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # author：zenghui time:2020/10/21
-
+from parameter_estimation import *
 from utils import *
 from models import *
 from self_supervised_learning_sr import *
@@ -14,7 +14,6 @@ import copy
 import math
 from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
-from self_supervised_learning_sr import estimate_SIM_pattern
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 
 # import self_supervised_learning_sr.estimate_SIM_pattern
@@ -79,6 +78,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
 
     mask = torch.zeros_like(input_SIM_raw_data, device=device)
     mask[:, :, psf_radius:-psf_radius, psf_radius:-psf_radius] = 1
+    mask = 1
 
     temp_input_SIM_pattern, estimated_pattern_parameters = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels(
         input_SIM_raw_data)
@@ -168,8 +168,10 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
             # result1 = forward_model.low_pass_filter(SR_image_notch_filtered.to(device),CTF)
             # result1 = result1[psf_radius: -psf_radius, psf_radius: -psf_radius]
 
-            result = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
-            result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
+            # result = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
+            # result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
+            result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered,
+                                                                            estimated_pattern_parameters).squeeze()
             common_utils.plot_single_tensor_image(result)
             # common_utils.plot_single_tensor_image(SR_image_high_freq_filtered)
 
@@ -220,7 +222,7 @@ if __name__ == '__main__':
 
     random.seed(60)  # 设置随机种子
     # min_loss = 1e5
-    num_epochs = 1000
+    num_epochs = 100
 
     random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
     lr = random_params['learning_rate']

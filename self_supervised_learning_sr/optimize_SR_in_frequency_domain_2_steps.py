@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # author：zenghui time:2020/11/12
 
+from parameter_estimation import *
 from utils import *
 from models import *
 from self_supervised_learning_sr import *
@@ -14,11 +15,9 @@ import copy
 import math
 from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
-from self_supervised_learning_sr import estimate_SIM_pattern
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 from simulation_data_generation import SRimage_metrics
 
-# import self_supervised_learning_sr.estimate_SIM_pattern
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -31,22 +30,22 @@ def try_gpu():
         device = torch.device('cpu')
     return device
 
-def compare_reconstruction_quality_using_different_input_frames(SIM_data_dataloader):
+def compare_reconstruction_quality_using_different_input_frames(SIM_data_dataloader,image_show = False):
+    data_num = 0
     for SIM_data in SIM_data_dataloader:
         SIM_raw_data = SIM_data[0]
-        data_num = 0
         SSIM_of_diff_input_num = torch.zeros(5,1)
         PSNR_of_diff_input_num = torch.zeros(5,1)
         for i in range(5):
-            SSIM_of_diff_input_num[i,0],PSNR_of_diff_input_num[i,0],SR = SR_reconstruction(SIM_raw_data,input_num = i+5)
-        if i == 0:
+            SSIM_of_diff_input_num[i,0],PSNR_of_diff_input_num[i,0],SR = SR_reconstruction(SIM_data,input_num = i+5,image_show = image_show)
+        if data_num == 0:
             SSIM = SSIM_of_diff_input_num
             PSNR = PSNR_of_diff_input_num
         else:
             SSIM = torch.cat([SSIM, SSIM_of_diff_input_num], 1)
             PSNR = torch.cat([PSNR, PSNR_of_diff_input_num], 1)
         data_num += 1
-        if data_num > 2:
+        if data_num > 30:
             break
 
     SSIM_mean = torch.mean(SSIM,1).numpy()
@@ -55,14 +54,27 @@ def compare_reconstruction_quality_using_different_input_frames(SIM_data_dataloa
     PSNR_mean = torch.mean(PSNR,1).numpy()
     PSNR_std = torch.std(PSNR, 1).numpy()
 
+    np.save(save_file_directory +"SSIM.npy", SSIM.numpy())
+    np.save(save_file_directory +"PSNR.npy", PSNR.numpy())
+
     index = np.arange(5)
+    total_width, n = 0.4, 2
+    width = total_width / n
+
     plt.title('A Bar Chart')
-    plt.bar(index, SSIM_mean, yerr=SSIM_std, error_kw={'ecolor': '0.2', 'capsize': 6}, alpha=0.7, label='First')
+    plt.bar(index, SSIM_mean, width=width, yerr=SSIM_std, error_kw={'ecolor': '0.2', 'capsize': 6}, alpha=0.7, label='SSIM',color='#583d72')
+    plt.legend(loc=2)
+    plt.savefig(save_file_directory + 'SSIM_bar.eps', dpi=600, format='eps')
+    plt.show()
+    plt.bar(index-width, PSNR_mean, width=width, yerr=PSNR_std, error_kw={'ecolor': '0.2', 'capsize': 6}, alpha=0.7,
+            label='PSNR',color = '#9f5f80')
     plt.xticks(index + 0.2, ['5', '6', '7', '8', '9'])
     plt.legend(loc=2)
+    plt.grid(linestyle='--',c='#bbbbbb')
+    plt.savefig(save_file_directory + 'PSNR_bar.eps', dpi=600,format='eps')
     plt.show()
 
-def SR_reconstruction( SIM_data,input_num = 5):
+def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
     """Train and evaluate a model with CPU or GPU."""
     print('training on', device)
 
@@ -80,7 +92,7 @@ def SR_reconstruction( SIM_data,input_num = 5):
     CTF = experimental_params.CTF_form(fc_ratio=2).to(device)
 
     if input_num == 5:
-        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2,3,6])
+        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0, 1 ,2 ,3 ,6])
     elif input_num == 6:
         input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 1, 2, 3, 6, 4])
     elif input_num == 7:
@@ -89,7 +101,7 @@ def SR_reconstruction( SIM_data,input_num = 5):
         input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 1, 2, 3, 6 ,4 ,7 ,5])
     elif input_num == 9:
         input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data)
-    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern)
+    # input_SIM_pattern = common_utils.pick_input_data(SIM_pattern)
 
     # input_SIM_raw_data_normalized = processing_utils.pre_processing(input_SIM_raw_data)
 
@@ -111,6 +123,7 @@ def SR_reconstruction( SIM_data,input_num = 5):
         input_SIM_raw_data)
     estimated_SIM_pattern_without_m = estimated_SIM_pattern_without_m.to(device)
     print(estimated_pattern_parameters)
+    estimated_pattern_parameters = estimated_pattern_parameters.to(device)
     estimated_modulation_factor = estimated_pattern_parameters[:,2].clone().detach().to(device)
     estimated_modulation_factor.requires_grad = True
 
@@ -137,13 +150,15 @@ def SR_reconstruction( SIM_data,input_num = 5):
 
     input_SIM_raw_data_fft = unsample_process(image_size,input_SIM_raw_data,CTF,experimental_params.upsample)
 
-    SR_image1 = first_step_optimization(SR_image_step1, input_SIM_raw_data_fft, optimizer_SR_and_pattern_params,estimated_SIM_pattern_without_m, estimated_modulation_factor, psf_reconstruction_conv, OTF)
+    SR_image1 = first_step_optimization(SR_image_step1, input_SIM_raw_data_fft, optimizer_SR_and_pattern_params,
+                                        estimated_SIM_pattern_without_m, estimated_modulation_factor,estimated_pattern_parameters,
+                                        psf_reconstruction_conv, OTF,image_show=image_show)
     SR_image2 = second_step_optimization(SR_image_step2, input_SIM_raw_data_fft, optimizer_SR_and_pattern_params,
-                             estimated_SIM_pattern_without_m, estimated_modulation_factor, OTF, psf_reconstruction_conv)
+                             estimated_SIM_pattern_without_m, estimated_modulation_factor, estimated_pattern_parameters, OTF, psf_reconstruction_conv,image_show=image_show)
 
-    SR = frequency_spectrum_fusion(SR_image1, SR_image2, estimated_pattern_parameters, optimizer_fusion_params, alpha,experimental_params)
+    SR = frequency_spectrum_fusion(SR_image1, SR_image2, estimated_pattern_parameters, optimizer_fusion_params, alpha,experimental_params,image_show=image_show)
     SR = SR / SR.max()
-    SR_np = SR.cpu().squeeze().numpy()*255
+    SR_np = SR.cpu().squeeze().detach().numpy()*255
     SSIM = SRimage_metrics.calculate_ssim(SR_np,HR)
     PSNR = SRimage_metrics.calculate_psnr_np(SR_np,HR)
 
@@ -182,14 +197,14 @@ def unsample_process(image_size,input_SIM_raw_data,CTF,upsample_flag=False):
 
     return input_SIM_raw_data_fft
 
-def first_step_optimization(SR_image,input_SIM_raw_data_fft,optimizer_SR_and_pattern_params,estimated_SIM_pattern_without_m,estimated_modulation_factor,psf_reconstruction_conv,OTF):
+def first_step_optimization(SR_image,input_SIM_raw_data_fft,optimizer_SR_and_pattern_params,estimated_SIM_pattern_without_m,estimated_modulation_factor,estimate_SIM_pattern_parameters, psf_reconstruction_conv,OTF,image_show=True):
     ## step 1
     for epoch in range(num_epochs):
 
         loss = torch.tensor([0.0], dtype=torch.float32, device=device)
         optimizer_SR_and_pattern_params.zero_grad()
         temp_input_SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern_V1(estimated_SIM_pattern_without_m,
-                                                                              estimated_modulation_factor,device)
+                                                                              estimated_modulation_factor,estimate_SIM_pattern_parameters)
         for i in range(3):
             sample_light_field = SR_image * temp_input_SIM_pattern[:, i, :, :]
             sample_light_field_complex = torch.stack([sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
@@ -208,16 +223,17 @@ def first_step_optimization(SR_image,input_SIM_raw_data_fft,optimizer_SR_and_pat
     SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image.detach(), 1,
                                                                    psf_reconstruction_conv)
     SR_image1 = SR_image_high_freq_filtered
-    common_utils.plot_single_tensor_image(SR_image1)
+    if image_show == True:
+        common_utils.plot_single_tensor_image(SR_image1)
 
     return SR_image1
 
-def second_step_optimization(SR_image_step2,input_SIM_raw_data_fft,optimizer_SR_and_pattern_params,estimated_SIM_pattern_without_m,estimated_modulation_factor,OTF,psf_reconstruction_conv):
+def second_step_optimization(SR_image_step2,input_SIM_raw_data_fft,optimizer_SR_and_pattern_params,estimated_SIM_pattern_without_m,estimated_modulation_factor,estimate_SIM_pattern_parameters,OTF,psf_reconstruction_conv,image_show = True):
     for epoch in range(num_epochs):
         loss = torch.tensor([0.0], dtype=torch.float32, device=device)
         optimizer_SR_and_pattern_params.zero_grad()
         temp_input_SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern_V1(estimated_SIM_pattern_without_m,
-                                                                                 estimated_modulation_factor, device)
+                                                                                 estimated_modulation_factor,estimate_SIM_pattern_parameters )
         for i in range(temp_input_SIM_pattern.size()[1]):
             sample_light_field = SR_image_step2 * temp_input_SIM_pattern[:, i, :, :]
             sample_light_field_complex = torch.stack(
@@ -238,11 +254,12 @@ def second_step_optimization(SR_image_step2,input_SIM_raw_data_fft,optimizer_SR_
     SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image_step2.detach(), 1,
                                                                    psf_reconstruction_conv)
     SR_image2 = SR_image_high_freq_filtered
-    common_utils.plot_single_tensor_image(SR_image2)
+    if image_show == True:
+        common_utils.plot_single_tensor_image(SR_image2)
 
     return SR_image2
 
-def frequency_spectrum_fusion(SR_image1,SR_image2,estimated_pattern_parameters,optimizer_fusion_params,alpha,experimental_params,mode = 'replace_LR'):
+def frequency_spectrum_fusion(SR_image1,SR_image2,estimated_pattern_parameters,optimizer_fusion_params,alpha,experimental_params,mode = 'replace_LR', image_show = True):
     SR_image_low_freq_complex = torch.stack(
         [SR_image1.squeeze(), torch.zeros_like(SR_image1).squeeze()], 2)
     SR_image_low_freq_fft = forward_model.torch_2d_fftshift(
@@ -300,14 +317,15 @@ def frequency_spectrum_fusion(SR_image1,SR_image2,estimated_pattern_parameters,o
     else:
         raise Exception('please input correct mode')
 
-    pattern_freq_radius = torch.norm(estimated_pattern_parameters[0, 0:2])
+    pattern_freq_radius = torch.norm(estimated_pattern_parameters[0, 0:2]).detach().cpu()
     result = processing_utils.notch_filter_for_all_vulnerable_point(result,
                                                                     estimated_pattern_parameters,
                                                                     filter_radius=pattern_freq_radius + 5).squeeze()
-    # result = processing_utils.filter_for_computable_freq(result,estimated_pattern_parameters)
+
     result = processing_utils.notch_filter_single_direction(result,
                                                             torch.mean(estimated_pattern_parameters[0:3, :], dim=0))
-    common_utils.plot_single_tensor_image(result)
+    if image_show == True:
+        common_utils.plot_single_tensor_image(result)
 
     return result
 if __name__ == '__main__':
@@ -341,7 +359,7 @@ if __name__ == '__main__':
 
     random.seed(60)  # 设置随机种子
     # min_loss = 1e5
-    num_epochs = 1800
+    num_epochs = 1500
 
     random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
     lr = random_params['learning_rate']
@@ -354,7 +372,8 @@ if __name__ == '__main__':
     criterion = loss_functions.MSE_loss()
     num_raw_SIMdata, output_nc, num_downs = 2, 1, 5
 
-    # compare_reconstruction_quality_using_different_input_frames(SIM_data_dataloader)
+    # compare_reconstruction_quality_using_different_input_frames(SIM_data_dataloader,image_show = False)
+
     start_time = time.time()
 
     input_id = 1
@@ -365,9 +384,11 @@ if __name__ == '__main__':
             break
         data_id += 1
 
-    SSIM, PSNR, best_SR = SR_reconstruction( SIM_data)
+    SSIM, PSNR, best_SR = SR_reconstruction(SIM_data,input_num = 9)
     if not best_SR.dim() == 4:
         best_SR = best_SR.reshape([1, 1, best_SR.size()[0], best_SR.size()[1]])
     common_utils.save_image_tensor2pillow(best_SR, save_file_directory)
     end_time = time.time()
+
+    print(' SSIM:%f, PSNR:%f,time: %f ' % (SSIM, PSNR, end_time - start_time))
 

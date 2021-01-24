@@ -105,7 +105,10 @@ class UNet(nn.Module):
 
     def forward(self, x):
         if self.input_mode == 'only_input_SIM_images':
-            x1 = self.inc(x[:,0:-1,:,:])
+            if x.size(1) ==1:
+                x1 = self.inc(x[:, :, :, :])
+            else:
+                x1 = self.inc(x[:,0:-1,:,:])
         elif self.input_mode == 'input_all_images':
             x1 = self.inc(x)
         else:

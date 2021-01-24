@@ -6,6 +6,7 @@ I try to execute the optimization process at 3 direction respectively to avoid g
 residual frequency peaks in Fourier frequency domain.
 This method work well in simulation, but it seems that the optimization process on experimental data
 is quite slow, and even cannot converge'''
+from parameter_estimation import *
 from utils import *
 from models import *
 from self_supervised_learning_sr import *
@@ -18,7 +19,6 @@ import copy
 import math
 from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
-from self_supervised_learning_sr import estimate_SIM_pattern
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 import torch.nn.functional as F
 
