@@ -76,9 +76,9 @@ class SinusoidalPattern(Operations.Operation):
             self.SR_image_size = self.image_size * 2
             self.SR_PixelSize = self.PixelSizeOfCCD / self.Magnification / 2
             self.upsample = True
-            self.xx_upsmaple, self.yy_upsmaple, self.fx_upsmaple, self.fy_upsmaple = self.GridGenerate(up_sample=self.upsample)
+            self.xx_upsmaple, self.yy_upsmaple, self.fx_upsmaple, self.fy_upsmaple = self.GridGenerate(self.image_size, up_sample=self.upsample)
             self.f_upsample = pow((self.fx_upsmaple ** 2 + self.fy_upsmaple ** 2), 1 / 2)
-            self.OTF_upsmaple = self.OTF_form(fc_ratio=1,upsample = True)
+            self.OTF_upsmaple = self.OTF_form(fc_ratio=1,pixel_mode='upsample')
         else:
             self.upsample = False
 
@@ -223,7 +223,7 @@ class SinusoidalPattern(Operations.Operation):
         SinPattern_PIL = transforms.ToPILImage()(SinPattern).convert('RGB')
 
         return SIMdata_OTF_filter_gaussian_noise_PIL, SinPattern_PIL
-    def GridGenerate(self, up_sample= False, grid_mode='real'):
+    def GridGenerate(self, image_size=256, up_sample= False, grid_mode='real'):
         '''
         :param Magnification: the magnification of the Microscope
         :param PixelSize: the PixleSize of the sCMOS or CCD
@@ -348,12 +348,11 @@ class SinusoidalPattern(Operations.Operation):
         LR_image_PIL = transforms.ToPILImage()(LR_image_tensor).convert('RGB')
         return [LR_image_PIL]
 
-    def OTF_form(self, fc_ratio=1, upsample = False):
-        # fc_ratio: the ratio between the cutoff frequency of OTF to be generated with that of imaging OTF
+    def OTF_form(self, fc_ratio=1, pixel_mode = 'default'):
         f0 = fc_ratio * self.f_cutoff
-        if upsample == False:
+        if pixel_mode == 'default':
             f = self.f
-        elif upsample == True:
+        elif pixel_mode == 'upsample':
             f = self.f_upsample
 
         OTF = torch.where(f < f0, (2 / math.pi) * (torch.acos(f / f0) - (f / f0) * (
@@ -361,11 +360,11 @@ class SinusoidalPattern(Operations.Operation):
         # OTF = torch.where(f < f0,torch.ones_like(f),torch.zeros_like(f))
         return OTF
 
-    def CTF_form(self,fc_ratio=1,upsample = False):
-        f0 = fc_ratio * self.f_cutoff
-        if upsample == False:
+    def CTF_form(self,fc_ratio=1,pixel_mode = 'default'):
+        f0 = fc_ratio * self.f_cutoff / 2
+        if pixel_mode == 'default':
             f = self.f
-        elif upsample == True:
+        elif pixel_mode == 'upsample':
             f = self.f_upsample
         CTF = torch.where(f < f0, torch.Tensor([1]), torch.Tensor([0]))
         return CTF
@@ -384,15 +383,6 @@ class SinusoidalPattern(Operations.Operation):
         id = torch.arange(0, half_row_of_psf.nelement())[half_row_of_psf.gt(1e-3)]
         psf_crop = psf_tensor[id[0]:id[-1] + 1, id[0]:id[-1] + 1]
         return psf_crop
-
-    def apodization_function_generator(self, fc_ratio=1.8,upsample = False):
-        f0 = fc_ratio * self.f_cutoff
-        if upsample == False:
-            f = self.f
-        elif upsample == True:
-            f = self.f_upsample
-        apodization_function = torch.cos( f / f0 * math.pi / 2)
-        return apodization_function
 
 
 class psf_conv_generator(nn.Module):
