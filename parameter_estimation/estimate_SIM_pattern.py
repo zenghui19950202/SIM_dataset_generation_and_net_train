@@ -70,7 +70,7 @@ def estimate_SIM_pattern_and_parameters_of_multichannels_V1(SIM_data):
 
     image_size = experimental_parameters.image_size
     estimated_SIM_pattern_parameters = torch.zeros(input_channel, 5)
-    xx, yy, _, _ = experimental_parameters.GridGenerate(image_size, grid_mode='pixel',
+    xx, yy, _, _ = experimental_parameters.GridGenerate(grid_mode='pixel',
                                                         up_sample=experimental_parameters.upsample)
     for i in range(input_channel):
         one_channel_SIM_data = SIM_data[:, i, :, :].squeeze()

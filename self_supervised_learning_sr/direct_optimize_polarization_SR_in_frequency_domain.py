@@ -91,7 +91,7 @@ def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
     OTF = experimental_params.OTF
     psf = experimental_params.psf_form(OTF)
     OTF = OTF.to(device)
-    CTF = experimental_params.CTF_form(fc_ratio=2).to(device)
+    CTF = experimental_params.CTF_form(fc_ratio=1).to(device)
 
     if input_num == 5:
         input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0, 1 ,2 ,3 ,6])
@@ -103,6 +103,10 @@ def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
         input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 1, 2, 3, 6 ,4 ,7 ,5])
     elif input_num == 9:
         input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data)
+    elif input_num == 4:
+        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 3, 6,1])
+    elif input_num == 1:
+        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [2])
     # input_SIM_pattern = common_utils.pick_input_data(SIM_pattern)
 
     # input_SIM_raw_data_normalized = processing_utils.pre_processing(input_SIM_raw_data)
@@ -115,7 +119,6 @@ def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
     if experimental_params.upsample == True:
         up_sample = torch.nn.UpsamplingBilinear2d(scale_factor=2)
         SR_image = up_sample(copy.deepcopy(wide_field_image).unsqueeze(0))
-        OTF = experimental_params.OTF_upsmaple.to(device)
         HR = up_sample(HR.unsqueeze(0))
     else:
         SR_image = copy.deepcopy(wide_field_image)
@@ -130,10 +133,6 @@ def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
     estimated_pattern_parameters = estimated_pattern_parameters.to(device)
     estimated_modulation_factor = estimated_pattern_parameters[:,2].clone().detach().to(device)
     estimated_modulation_factor.requires_grad = True
-
-    OTF_reconstruction = experimental_params.OTF_form(fc_ratio=1 + experimental_params.pattern_frequency_ratio)
-    psf_reconstruction = experimental_params.psf_form(OTF_reconstruction)
-    psf_reconstruction_conv = funcs.psf_conv_generator(psf_reconstruction, device)
 
     params = []
     SR_image = SR_image.to(device)
@@ -151,7 +150,7 @@ def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
     input_SIM_raw_data_fft = unsample_process(image_size,input_SIM_raw_data,CTF,experimental_params.upsample)
 
     SR_reuslt = reconstruction(SR_image, polarization_direction, input_SIM_raw_data_fft, optimizer_SR_and_polarization,
-                                        temp_input_SIM_pattern,estimated_pattern_parameters, psf_reconstruction_conv, OTF,image_show=image_show)
+                                        temp_input_SIM_pattern,estimated_pattern_parameters, experimental_params,image_show=image_show)
     SR = SR_reuslt / SR_reuslt.max()
     SR_np = SR.cpu().squeeze().detach().numpy()*255
     SSIM = SRimage_metrics.calculate_ssim(SR_np,HR)
@@ -159,7 +158,7 @@ def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
     # SSIM = 1
     # PSNR = 1
 
-    return SSIM,PSNR,(1+torch.cos(polarization_direction))
+    return SSIM,PSNR,SR #(1+torch.cos(polarization_direction))
 
 
 def init_weights(m):
@@ -190,19 +189,20 @@ def unsample_process(image_size,input_SIM_raw_data,CTF,upsample_flag=False):
             input_SIM_raw_data_complex = torch.stack(
                 [input_SIM_raw_data[:, i, :, :].squeeze(), torch.zeros_like(input_SIM_raw_data[:, i, :, :]).squeeze()], 2)
             input_SIM_raw_data_fft[:,i,:,:,:] = forward_model.torch_2d_fftshift(
-                torch.fft(input_SIM_raw_data_complex, 2)) * CTF.unsqueeze(2)
+                torch.fft(input_SIM_raw_data_complex, 2))* CTF.unsqueeze(2)
 
     return input_SIM_raw_data_fft
 
-def reconstruction(SR_image,polarization_direction, input_SIM_raw_data_fft,optimizer_SR_and_polarization, input_SIM_pattern,estimated_pattern_parameters,psf_reconstruction_conv,OTF,image_show=True):
+def reconstruction(SR_image,polarization_direction, input_SIM_raw_data_fft,optimizer_SR_and_polarization, input_SIM_pattern,estimated_pattern_parameters,experimental_params,image_show=True):
     device = SR_image.device
+    OTF = experimental_params.OTF_upsmaple.to(device)
     for epoch in range(num_epochs):
         loss = torch.tensor([0.0], dtype=torch.float32, device=device)
         optimizer_SR_and_polarization.zero_grad()
         for i in range(estimated_pattern_parameters.size()[0]):
             theta = torch.atan(estimated_pattern_parameters[i, 1] / estimated_pattern_parameters[i, 0])
-            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1+torch.cos(theta-polarization_direction))
-            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :]
+            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1+0.6* torch.cos(theta-polarization_direction))
+            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :]
             sample_light_field_complex = torch.stack([sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
             SIM_raw_data_fft_estimated = forward_model.torch_2d_fftshift(
                 torch.fft((sample_light_field_complex), 2)) * OTF.unsqueeze(2)
@@ -216,12 +216,8 @@ def reconstruction(SR_image,polarization_direction, input_SIM_raw_data_fft,optim
 
         print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
 
-    SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image.detach(), 1,
-                                                                   psf_reconstruction_conv)
-    SR_image1 = SR_image_high_freq_filtered
     if image_show == True:
-        result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered,
-                                                                        estimated_pattern_parameters).squeeze()
+        result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image,estimated_pattern_parameters,experimental_params).squeeze()
         common_utils.plot_single_tensor_image(result)
 
     return result
