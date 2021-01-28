@@ -29,7 +29,7 @@ def calculate_phase(image,pixel_frequency):
     # OTF_np  = OTF.detach().numpy()
     # fft_numpy_image * OTF_np.conj()
     image_size = experimental_parameters.image_size
-    xx, yy, _, _ = experimental_parameters.GridGenerate(image_size, grid_mode='pixel')
+    xx, yy, _, _ = experimental_parameters.GridGenerate(False, grid_mode='pixel')
     image_np_times_phase_gradient = image_np * np.exp(-1j * 2 * math.pi * (pixel_frequency[0].float()/image_size * xx + pixel_frequency[1].float()/image_size * yy).numpy())
     translated_fft_image_np = fftshift(fft2(image_np_times_phase_gradient, axes=(0, 1)), axes=(0, 1))
     estimated_phase = -np.angle(sum(sum(np.conj(translated_fft_image_np) * fft_image_np)))
@@ -128,7 +128,7 @@ def shift_freq_domain_peak_intensity(subpixel_shift,image_np,peak_position_pixel
     image_size = image_np.shape[0]
     experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size)
     image_size = experimental_parameters.image_size
-    xx, yy, _, _ = experimental_parameters.GridGenerate(image_size, grid_mode='pixel')
+    xx, yy, _, _ = experimental_parameters.GridGenerate(False, grid_mode='pixel')
     image_np_times_phase_gradient = image_np * np.exp(-1j * 2 * math.pi * (subpixel_shift[0]/image_size * xx + subpixel_shift[1]/image_size * yy).numpy())
     translated_fft_image_np = fftshift(fft2(image_np_times_phase_gradient, axes=(0, 1)), axes=(0, 1))
     normalized_translated_fft_image_np = np.log(abs(translated_fft_image_np) + 1)
@@ -211,7 +211,7 @@ def calculate_modulation_factor(one_channel_SIM_data,estimated_spatial_frequency
     image_np = one_channel_SIM_data.detach().numpy()
     image_size = image_np.shape[0]
     experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size)
-    xx, yy, _, _ = experimental_parameters.GridGenerate(image_size, grid_mode='pixel')
+    xx, yy, _, _ = experimental_parameters.GridGenerate(False, grid_mode='pixel')
     image_np_times_phase_gradient = image_np * np.exp(-1j * 2 * math.pi * (estimated_spatial_frequency[0]/image_size * xx + estimated_spatial_frequency[1]/image_size * yy).numpy())
     translated_fft_image_np = fftshift(fft2(image_np_times_phase_gradient, axes=(0, 1)), axes=(0, 1))
 

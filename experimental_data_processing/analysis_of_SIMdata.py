@@ -98,7 +98,7 @@ if __name__ == '__main__':
     save_wide_field_image(wide_field_direction1.unsqueeze(0).unsqueeze(0),save_file_directory,1)
     save_wide_field_image(wide_field_direction2.unsqueeze(0).unsqueeze(0),save_file_directory,2)
     save_wide_field_image(wide_field_direction3.unsqueeze(0).unsqueeze(0),save_file_directory,3)
-
+    save_wide_field_image(deconv.unsqueeze(0).unsqueeze(0), save_file_directory, 'deconv')
     # common_utils.plot_single_tensor_image(wide_field_direction1)
     # common_utils.plot_single_tensor_image(wide_field_direction2)
     # common_utils.plot_single_tensor_image(wide_field_direction3)

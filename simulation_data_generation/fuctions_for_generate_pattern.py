@@ -82,7 +82,7 @@ class SinusoidalPattern(Operations.Operation):
         else:
             self.upsample = False
 
-        self.upsample = True
+        # self.upsample = True
 
         self.xx, self.yy, self.fx, self.fy = self.GridGenerate(self.image_size)
 

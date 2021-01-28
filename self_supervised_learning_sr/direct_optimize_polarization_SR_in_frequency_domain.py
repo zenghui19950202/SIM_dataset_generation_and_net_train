@@ -201,8 +201,8 @@ def reconstruction(SR_image,polarization_direction, input_SIM_raw_data_fft,optim
         optimizer_SR_and_polarization.zero_grad()
         for i in range(estimated_pattern_parameters.size()[0]):
             theta = torch.atan(estimated_pattern_parameters[i, 1] / estimated_pattern_parameters[i, 0])
-            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1+0.6* torch.cos(theta-polarization_direction))
-            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :]
+            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1+0.6* torch.cos(theta-polarization_direction))
+            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :]
             sample_light_field_complex = torch.stack([sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
             SIM_raw_data_fft_estimated = forward_model.torch_2d_fftshift(
                 torch.fft((sample_light_field_complex), 2)) * OTF.unsqueeze(2)
