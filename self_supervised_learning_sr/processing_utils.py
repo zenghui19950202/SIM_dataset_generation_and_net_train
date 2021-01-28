@@ -138,16 +138,19 @@ def notch_filter_generate(SR_image, estimated_pattern_parameters,notch_radius = 
 
     return notch_filter
 
-def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters,filter_radius = 5):
+def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters,experimental_parameters,filter_radius = 5):
+    device = SR_image.device
     SR_image = SR_image.squeeze()
     image_size = SR_image.size()
-    SR_image_np = SR_image.detach().cpu().numpy()
-    fft_image_np = fftshift(fft2(SR_image_np, axes=(0, 1)), axes=(0, 1))
-    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size[0])
-    fx, fy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
+
+    upsample_flag = experimental_parameters.upsample
+    fx,fy,_ ,_ =experimental_parameters.GridGenerate(up_sample= upsample_flag, grid_mode='pixel')
     spatial_freq = estimated_pattern_parameters[:, 0:2].squeeze().detach().cpu()
     spatial_freq_x_positive = torch.zeros([3,2])
     spatial_freq_all = torch.zeros([6,2])
+
+    CTF = experimental_parameters.CTF_form(fc_ratio=1.8,upsample=upsample_flag).unsqueeze(2).to(device)
+    apodization_function = experimental_parameters.apodization_function_generator(fc_ratio=1.8,upsample=upsample_flag).unsqueeze(2).to(device)
 
     notch_filter = torch.zeros_like(SR_image)
     device = SR_image.device
@@ -187,7 +190,8 @@ def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters
         [SR_image, torch.zeros_like(SR_image).squeeze()], 2)
 
     SR_image_fft = forward_model.torch_2d_fftshift(torch.fft((SR_image_complex), 2))
-    SR_image_fft_filtered = SR_image_fft * (1-notch_filter).unsqueeze(2)
+    # SR_image_fft_filtered = SR_image_fft * (1-notch_filter).unsqueeze(2) * CTF * apodization_function
+    SR_image_fft_filtered = SR_image_fft * (1 - notch_filter).unsqueeze(2)
     SR_image_filtered_complex = torch.ifft(forward_model.torch_2d_ifftshift(SR_image_fft_filtered),2)
 
     SR_image_filtered = forward_model.complex_stack_to_intensity(SR_image_filtered_complex)
@@ -195,12 +199,11 @@ def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters
     return SR_image_filtered
 
 
-def notch_filter_single_direction(SR_image, estimated_pattern_parameters):
+def notch_filter_single_direction(SR_image, estimated_pattern_parameters,experimental_parameters):
     SR_image = SR_image.squeeze()
     image_size = SR_image.size()
     SR_image_np = SR_image.detach().cpu().numpy()
     fft_image_np = fftshift(fft2(SR_image_np, axes=(0, 1)), axes=(0, 1))
-    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size[0])
     fx, fy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel',up_sample=False)
     spatial_freq = estimated_pattern_parameters[0:2].squeeze().detach().cpu()
     notch_filter = torch.zeros_like(SR_image)
@@ -264,3 +267,4 @@ def filter_for_computable_freq(SR_image, estimated_pattern_parameters):
     SR_image_filtered = forward_model.complex_stack_to_intensity(SR_image_filtered_complex)
 
     return SR_image_filtered
+

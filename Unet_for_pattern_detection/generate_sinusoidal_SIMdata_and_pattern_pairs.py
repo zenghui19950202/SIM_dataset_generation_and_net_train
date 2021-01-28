@@ -94,7 +94,6 @@ if __name__ == '__main__':
 
 
     start_time = time.time()
-    # TODO:output_directory换成自己定义的目录
     p = Pipeline_SIMdata_pattern_pairs.Pipeline_SIMdata_pattern_pairs(source_directory=train_directory, output_directory=SaveFileDirectory)
     p.add_operation(Crop(probability=1, width = image_size, height = image_size, centre = False))
     p.add_operation(sinusoidal_SIMdata_pattern_pair(probability=1,image_size=image_size))
