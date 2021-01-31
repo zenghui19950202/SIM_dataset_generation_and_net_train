@@ -139,17 +139,20 @@ def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
     SR_image.requires_grad = True
     polarization_direction = torch.rand(SR_image.size()).to(device)
     polarization_direction.requires_grad = True
+    polarization_ratio = torch.tensor([0.0]).to(device)
+    polarization_ratio.requires_grad = True
 
     params += [{'params': SR_image, 'weight_decay': weight_decay}]
     params += [{'params': polarization_direction, 'weight_decay': weight_decay}]
     params += [{'params': estimated_modulation_factor}]
     optimizer_SR_and_polarization = optim.Adam(params, lr=0.001)
+    optimizer_polarization_ratio = optim.Adam(params, lr=0.01)
 
     input_SIM_raw_data = input_SIM_raw_data.to(device)
 
     input_SIM_raw_data_fft = unsample_process(image_size,input_SIM_raw_data,CTF,experimental_params.upsample)
 
-    SR_reuslt = reconstruction(SR_image, polarization_direction, input_SIM_raw_data_fft, optimizer_SR_and_polarization,
+    SR_reuslt = reconstruction(SR_image, polarization_direction, input_SIM_raw_data_fft, optimizer_SR_and_polarization,polarization_ratio,optimizer_polarization_ratio,
                                         temp_input_SIM_pattern,estimated_pattern_parameters, experimental_params,image_show=image_show)
     SR = SR_reuslt / SR_reuslt.max()
     SR_np = SR.cpu().squeeze().detach().numpy()*255
@@ -193,15 +196,17 @@ def unsample_process(image_size,input_SIM_raw_data,CTF,upsample_flag=False):
 
     return input_SIM_raw_data_fft
 
-def reconstruction(SR_image,polarization_direction, input_SIM_raw_data_fft,optimizer_SR_and_polarization, input_SIM_pattern,estimated_pattern_parameters,experimental_params,image_show=True):
+def reconstruction(SR_image,polarization_direction, input_SIM_raw_data_fft,optimizer_SR_and_polarization,polarization_ratio,optimizer_polarization_ratio, input_SIM_pattern,estimated_pattern_parameters,experimental_params,image_show=True):
     device = SR_image.device
     OTF = experimental_params.OTF_upsmaple.to(device)
     for epoch in range(num_epochs):
         loss = torch.tensor([0.0], dtype=torch.float32, device=device)
         optimizer_SR_and_polarization.zero_grad()
+        optimizer_polarization_ratio.zero_grad()
         for i in range(estimated_pattern_parameters.size()[0]):
             theta = torch.atan(estimated_pattern_parameters[i, 1] / estimated_pattern_parameters[i, 0])
-            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1+0.6* torch.cos(theta-polarization_direction))
+            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1+torch.sigmoid(polarization_ratio)* torch.cos(2*theta-2*polarization_direction))
+            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1 + 0.6 * torch.cos(2 * theta - 2 * polarization_direction))
             # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :]
             sample_light_field_complex = torch.stack([sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
             SIM_raw_data_fft_estimated = forward_model.torch_2d_fftshift(
@@ -210,6 +215,8 @@ def reconstruction(SR_image,polarization_direction, input_SIM_raw_data_fft,optim
             loss += mse_loss
         loss.backward()
         optimizer_SR_and_polarization.step()
+        if epoch > 0:
+            optimizer_polarization_ratio.step()
 
         with torch.no_grad():
             train_loss = loss.float()
@@ -278,7 +285,7 @@ if __name__ == '__main__':
             break
         data_id += 1
 
-    SSIM, PSNR, best_SR = SR_reconstruction(SIM_data,input_num = 5)
+    SSIM, PSNR, best_SR = SR_reconstruction(SIM_data,input_num = 7)
     if not best_SR.dim() == 4:
         best_SR = best_SR.reshape([1, 1, best_SR.size()[0], best_SR.size()[1]])
     common_utils.save_image_tensor2pillow(best_SR, save_file_directory)
