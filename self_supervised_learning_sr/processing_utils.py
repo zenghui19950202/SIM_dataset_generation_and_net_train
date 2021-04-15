@@ -184,7 +184,7 @@ def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters
                     fr_square = (fx_shift ** 2 + fy_shift ** 2)
                     f0 = image_size[0] / 256 * 2
                     notch_filter += torch.exp(-1 * fr_square / (4 * f0 * f0)).to(device)
-                    notch_filter = torch.where(notch_filter >0.5, torch.tensor([1.0],device=device), torch.tensor([0.0],device=device))
+                    # notch_filter = torch.where(notch_filter >0.5, torch.tensor([1.0],device=device), torch.tensor([0.0],device=device))
 
     SR_image_complex = torch.stack(
         [SR_image, torch.zeros_like(SR_image).squeeze()], 2)

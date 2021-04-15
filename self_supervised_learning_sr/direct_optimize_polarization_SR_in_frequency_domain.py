@@ -32,14 +32,17 @@ def try_gpu():
         device = torch.device('cpu')
     return device
 
-def compare_reconstruction_quality_using_different_input_frames(SIM_data_dataloader,image_show = False):
+
+def compare_reconstruction_quality_using_different_input_frames(SIM_data_dataloader, image_show=False):
     data_num = 0
     for SIM_data in SIM_data_dataloader:
         SIM_raw_data = SIM_data[0]
-        SSIM_of_diff_input_num = torch.zeros(5,1)
-        PSNR_of_diff_input_num = torch.zeros(5,1)
+        SSIM_of_diff_input_num = torch.zeros(5, 1)
+        PSNR_of_diff_input_num = torch.zeros(5, 1)
         for i in range(5):
-            SSIM_of_diff_input_num[i,0],PSNR_of_diff_input_num[i,0],SR = SR_reconstruction(SIM_data,input_num = i+5,image_show = image_show)
+            SSIM_of_diff_input_num[i, 0], PSNR_of_diff_input_num[i, 0], SR = SR_reconstruction(SIM_data,
+                                                                                               input_num=i + 5,
+                                                                                               image_show=image_show)
         if data_num == 0:
             SSIM = SSIM_of_diff_input_num
             PSNR = PSNR_of_diff_input_num
@@ -50,43 +53,47 @@ def compare_reconstruction_quality_using_different_input_frames(SIM_data_dataloa
         if data_num > 30:
             break
 
-    SSIM_mean = torch.mean(SSIM,1).numpy()
+    SSIM_mean = torch.mean(SSIM, 1).numpy()
     SSIM_std = torch.std(SSIM, 1).numpy()
 
-    PSNR_mean = torch.mean(PSNR,1).numpy()
+    PSNR_mean = torch.mean(PSNR, 1).numpy()
     PSNR_std = torch.std(PSNR, 1).numpy()
 
-    np.save(save_file_directory +"SSIM.npy", SSIM.numpy())
-    np.save(save_file_directory +"PSNR.npy", PSNR.numpy())
+    np.save(save_file_directory + "SSIM.npy", SSIM.numpy())
+    np.save(save_file_directory + "PSNR.npy", PSNR.numpy())
 
     index = np.arange(5)
     total_width, n = 0.4, 2
     width = total_width / n
 
     plt.title('A Bar Chart')
-    plt.bar(index, SSIM_mean, width=width, yerr=SSIM_std, error_kw={'ecolor': '0.2', 'capsize': 6}, alpha=0.7, label='SSIM',color='#583d72')
+    plt.bar(index, SSIM_mean, width=width, yerr=SSIM_std, error_kw={'ecolor': '0.2', 'capsize': 6}, alpha=0.7,
+            label='SSIM', color='#583d72')
     plt.legend(loc=2)
     plt.savefig(save_file_directory + 'SSIM_bar.eps', dpi=600, format='eps')
     plt.show()
-    plt.bar(index-width, PSNR_mean, width=width, yerr=PSNR_std, error_kw={'ecolor': '0.2', 'capsize': 6}, alpha=0.7,
-            label='PSNR',color = '#9f5f80')
+    plt.bar(index - width, PSNR_mean, width=width, yerr=PSNR_std, error_kw={'ecolor': '0.2', 'capsize': 6}, alpha=0.7,
+            label='PSNR', color='#9f5f80')
     plt.xticks(index + 0.2, ['5', '6', '7', '8', '9'])
     plt.legend(loc=2)
-    plt.grid(linestyle='--',c='#bbbbbb')
-    plt.savefig(save_file_directory + 'PSNR_bar.eps', dpi=600,format='eps')
+    plt.grid(linestyle='--', c='#bbbbbb')
+    plt.savefig(save_file_directory + 'PSNR_bar.eps', dpi=600, format='eps')
     plt.show()
 
-def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
+
+def SR_reconstruction(SIM_data, input_num=5, image_show=True):
     """Train and evaluate a model with CPU or GPU."""
     print('training on', device)
 
     LR_HR = SIM_data[1]
     SIM_raw_data = SIM_data[0]
 
-    image_size = [SIM_raw_data.size()[2],SIM_raw_data.size()[3]]
-    experimental_params = funcs.SinusoidalPattern(probability=1,image_size = image_size[0])
+    polarization_ratio = calculate_polarization(SIM_raw_data)
 
-    HR = LR_HR[:,:,:,0]
+    image_size = [SIM_raw_data.size()[2], SIM_raw_data.size()[3]]
+    experimental_params = funcs.SinusoidalPattern(probability=1, image_size=image_size[0])
+
+    HR = LR_HR[:, :, :, 0]
 
     OTF = experimental_params.OTF
     psf = experimental_params.psf_form(OTF)
@@ -94,17 +101,21 @@ def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
     CTF = experimental_params.CTF_form(fc_ratio=1).to(device)
 
     if input_num == 5:
-        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0, 1 ,2 ,3 ,6])
+        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 1, 2, 3, 6])
+        input_polarization_ratio = common_utils.pick_input_data(polarization_ratio, [0, 1, 2, 3, 6])
     elif input_num == 6:
         input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 1, 2, 3, 6, 4])
+        input_polarization_ratio = common_utils.pick_input_data(polarization_ratio, [0, 1, 2, 3, 6, 4])
     elif input_num == 7:
-        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 1, 2, 3, 6 ,4 ,7])
+        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 1, 2, 3, 6, 4, 7])
+        input_polarization_ratio = common_utils.pick_input_data(polarization_ratio, [0, 1, 2, 3, 6, 4, 7])
     elif input_num == 8:
-        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 1, 2, 3, 6 ,4 ,7 ,5])
+        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 1, 2, 3, 6, 4, 7, 5])
     elif input_num == 9:
         input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data)
+        input_polarization_ratio = common_utils.pick_input_data(polarization_ratio)
     elif input_num == 4:
-        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 3, 6,1])
+        input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [0, 3, 6, 1])
     elif input_num == 1:
         input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data, [2])
     # input_SIM_pattern = common_utils.pick_input_data(SIM_pattern)
@@ -125,13 +136,13 @@ def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
     HR = HR / HR.max()
     HR = HR.squeeze().numpy() * 255
 
-    temp_input_SIM_pattern, estimated_pattern_parameters,estimated_SIM_pattern_without_m = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
+    temp_input_SIM_pattern, estimated_pattern_parameters, estimated_SIM_pattern_without_m = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
         input_SIM_raw_data)
 
     print(estimated_pattern_parameters)
     temp_input_SIM_pattern = temp_input_SIM_pattern.to(device)
     estimated_pattern_parameters = estimated_pattern_parameters.to(device)
-    estimated_modulation_factor = estimated_pattern_parameters[:,2].clone().detach().to(device)
+    estimated_modulation_factor = estimated_pattern_parameters[:, 2].clone().detach().to(device)
     estimated_modulation_factor.requires_grad = True
 
     params = []
@@ -139,44 +150,52 @@ def SR_reconstruction( SIM_data,input_num = 5,image_show = True):
     SR_image.requires_grad = True
     polarization_direction = torch.rand(SR_image.size()).to(device)
     polarization_direction.requires_grad = True
-    polarization_ratio = torch.tensor([0.0]).to(device)
-    polarization_ratio.requires_grad = True
+    # polarization_ratio = torch.tensor([0.0]).to(device)
+    # polarization_ratio.requires_grad = True
 
     params += [{'params': SR_image, 'weight_decay': weight_decay}]
     params += [{'params': polarization_direction, 'weight_decay': weight_decay}]
-    params += [{'params': estimated_modulation_factor}]
+    # params += [{'params': estimated_modulation_factor}]
     optimizer_SR_and_polarization = optim.Adam(params, lr=0.001)
-    optimizer_polarization_ratio = optim.Adam(params, lr=0.01)
+    # optimizer_SR_and_polarization = optim.Adam(params, lr=0.01)
 
     input_SIM_raw_data = input_SIM_raw_data.to(device)
 
-    input_SIM_raw_data_fft = unsample_process(image_size,input_SIM_raw_data,CTF,experimental_params.upsample)
+    input_SIM_raw_data_fft = unsample_process(image_size, input_SIM_raw_data, CTF, experimental_params.upsample)
 
-    SR_reuslt = reconstruction(SR_image, polarization_direction, input_SIM_raw_data_fft, optimizer_SR_and_polarization,polarization_ratio,optimizer_polarization_ratio,
-                                        temp_input_SIM_pattern,estimated_pattern_parameters, experimental_params,image_show=image_show)
+    if experimental_params.upsample:
+        upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        input_polarization_ratio = upsample(input_polarization_ratio)
+    input_polarization_ratio = input_polarization_ratio.to(device)
+
+    SR_reuslt = reconstruction(SR_image, polarization_direction, input_SIM_raw_data_fft, optimizer_SR_and_polarization,
+                               input_polarization_ratio,
+                               temp_input_SIM_pattern, estimated_pattern_parameters, experimental_params,
+                               image_show=image_show)
     SR = SR_reuslt / SR_reuslt.max()
-    SR_np = SR.cpu().squeeze().detach().numpy()*255
-    SSIM = SRimage_metrics.calculate_ssim(SR_np,HR)
-    PSNR = SRimage_metrics.calculate_psnr_np(SR_np,HR)
+    SR_np = SR.cpu().squeeze().detach().numpy() * 255
+    SSIM = SRimage_metrics.calculate_ssim(SR_np, HR)
+    PSNR = SRimage_metrics.calculate_psnr_np(SR_np, HR)
     # SSIM = 1
     # PSNR = 1
 
-    return SSIM,PSNR,SR #(1+torch.cos(polarization_direction))
+    return SSIM, PSNR, SR  # (1+torch.cos(polarization_direction))
 
 
 def init_weights(m):
     if type(m) == nn.Linear or type(m) == nn.Conv2d:
         torch.nn.init.xavier_uniform_(m.weight)
 
-def unsample_process(image_size,input_SIM_raw_data,CTF,upsample_flag=False):
+
+def unsample_process(image_size, input_SIM_raw_data, CTF, upsample_flag=False):
     if upsample_flag == True:
-        if image_size[0] % 2 ==0:
+        if image_size[0] % 2 == 0:
             padding_size = int(image_size[0] / 2)
             ZeroPad = nn.ZeroPad2d(padding=(padding_size, padding_size, padding_size, padding_size))
 
         else:
             padding_size = int(image_size[0] / 2)
-            ZeroPad = nn.ZeroPad2d(padding=(padding_size+1, padding_size, padding_size+1, padding_size))
+            ZeroPad = nn.ZeroPad2d(padding=(padding_size + 1, padding_size, padding_size + 1, padding_size))
         input_SIM_raw_data_fft = torch.zeros([1, 9, image_size[0] * 2, image_size[1] * 2, 2], device=device)
         for i in range(input_SIM_raw_data.size()[1]):
             input_SIM_raw_data_complex = torch.stack(
@@ -185,38 +204,57 @@ def unsample_process(image_size,input_SIM_raw_data,CTF,upsample_flag=False):
             SIM_raw_data_fft = forward_model.torch_2d_fftshift(
                 torch.fft(input_SIM_raw_data_complex, 2)) * CTF.unsqueeze(2)
 
-            input_SIM_raw_data_fft[:, i, :, :, :] = torch.stack([ZeroPad(SIM_raw_data_fft[:,:,0]),ZeroPad(SIM_raw_data_fft[:,:,1])],2)
+            input_SIM_raw_data_fft[:, i, :, :, :] = torch.stack(
+                [ZeroPad(SIM_raw_data_fft[:, :, 0]), ZeroPad(SIM_raw_data_fft[:, :, 1])], 2)
     else:
-        input_SIM_raw_data_fft = torch.zeros([1, 9,image_size[0], image_size[1],2], device=device)
+        input_SIM_raw_data_fft = torch.zeros([1, 9, image_size[0], image_size[1], 2], device=device)
         for i in range(input_SIM_raw_data.size()[1]):
             input_SIM_raw_data_complex = torch.stack(
-                [input_SIM_raw_data[:, i, :, :].squeeze(), torch.zeros_like(input_SIM_raw_data[:, i, :, :]).squeeze()], 2)
-            input_SIM_raw_data_fft[:,i,:,:,:] = forward_model.torch_2d_fftshift(
-                torch.fft(input_SIM_raw_data_complex, 2))* CTF.unsqueeze(2)
+                [input_SIM_raw_data[:, i, :, :].squeeze(), torch.zeros_like(input_SIM_raw_data[:, i, :, :]).squeeze()],
+                2)
+            input_SIM_raw_data_fft[:, i, :, :, :] = forward_model.torch_2d_fftshift(
+                torch.fft(input_SIM_raw_data_complex, 2)) * CTF.unsqueeze(2)
 
     return input_SIM_raw_data_fft
 
-def reconstruction(SR_image,polarization_direction, input_SIM_raw_data_fft,optimizer_SR_and_polarization,polarization_ratio,optimizer_polarization_ratio, input_SIM_pattern,estimated_pattern_parameters,experimental_params,image_show=True):
+
+def reconstruction(SR_image, polarization_direction, input_SIM_raw_data_fft, optimizer_SR_and_polarization,
+                   polarization_ratio, input_SIM_pattern, estimated_pattern_parameters, experimental_params,
+                   image_show=True):
     device = SR_image.device
-    OTF = experimental_params.OTF_upsmaple.to(device)
+    if experimental_params.upsample == True:
+        OTF = experimental_params.OTF_upsmaple.to(device)
+        fx, fy = experimental_params.fx_upsmaple, experimental_params.fy_upsmaple
+    else:
+        OTF = experimental_params.OTF.to(device)
+        fx, fy = experimental_params.fx, experimental_params.fy
+
+    fr = pow(fx,2)+pow(fy,2)
+    sigma = experimental_params.f_cutoff /4
+    high_pass_filter = 1 - torch.exp(-fr/sigma**2)
+    high_pass_filter = high_pass_filter.unsqueeze(2).to(device)
+    high_pass_filter = 1
+    # common_utils.plot_single_tensor_image(high_pass_filter)
+
     for epoch in range(num_epochs):
         loss = torch.tensor([0.0], dtype=torch.float32, device=device)
         optimizer_SR_and_polarization.zero_grad()
-        optimizer_polarization_ratio.zero_grad()
         for i in range(estimated_pattern_parameters.size()[0]):
             theta = torch.atan(estimated_pattern_parameters[i, 1] / estimated_pattern_parameters[i, 0])
-            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1+torch.sigmoid(polarization_ratio)* torch.cos(2*theta-2*polarization_direction))
-            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1 + 0.6 * torch.cos(2 * theta - 2 * polarization_direction))
+            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1 + 0.6 * torch.cos(2 * theta - 2 * polarization_direction))
+            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * polarization_ratio[:,i,:,:]
             # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :]
-            sample_light_field_complex = torch.stack([sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
+            sample_light_field_complex = torch.stack(
+                [sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
             SIM_raw_data_fft_estimated = forward_model.torch_2d_fftshift(
                 torch.fft((sample_light_field_complex), 2)) * OTF.unsqueeze(2)
-            mse_loss = criterion(SIM_raw_data_fft_estimated, input_SIM_raw_data_fft[:,i,:,:,:], 1, OTF, normalize=True, deconv=False)
+
+            mse_loss = criterion(SIM_raw_data_fft_estimated, input_SIM_raw_data_fft[:, i, :, :, :], high_pass_filter, OTF,
+                                 normalize=False, deconv=False)
             loss += mse_loss
+        # loss+=  1e5 * loss_functions.tv_loss_calculate(abs(SR_image))
         loss.backward()
         optimizer_SR_and_polarization.step()
-        if epoch > 0:
-            optimizer_polarization_ratio.step()
 
         with torch.no_grad():
             train_loss = loss.float()
@@ -224,10 +262,42 @@ def reconstruction(SR_image,polarization_direction, input_SIM_raw_data_fft,optim
         print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
 
     if image_show == True:
-        result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image,estimated_pattern_parameters,experimental_params).squeeze()
-        common_utils.plot_single_tensor_image(result)
+        result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters,
+                                                                        experimental_params).squeeze()
+        common_utils.plot_single_tensor_image(abs(SR_image))
 
     return result
+
+
+def calculate_polarization(SIM_raw_data):
+    SIM_data_three_direction = torch.stack(
+        [SIM_raw_data[:, 0, :, :], SIM_raw_data[:, 3, :, :], SIM_raw_data[:, 6, :, :]], dim=1)
+    _, estimated_pattern_parameters, _ = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
+        SIM_data_three_direction)
+    # print(estimated_pattern_parameters)
+    theta = torch.atan(estimated_pattern_parameters[:, 1] / estimated_pattern_parameters[:, 0])
+    wide_field_1 = torch.mean(SIM_raw_data[0, 0:3, :, :], dim=0)
+    wide_field_2 = torch.mean(SIM_raw_data[0, 3:6, :, :], dim=0)
+    wide_field_3 = torch.mean(SIM_raw_data[0, 6:9, :, :], dim=0)
+    wide_field_np_1, wide_field_np_2, wide_field_np_3 = wide_field_1.numpy(), wide_field_2.numpy(), wide_field_3.numpy()
+    fft_wide_field_np_1, fft_wide_field_np_2, fft_wide_field_np_3 = np.fft.fftshift(
+        np.fft.fft2(wide_field_np_1)), np.fft.fftshift(np.fft.fft2(wide_field_np_2)), np.fft.fftshift(
+        np.fft.fft2(wide_field_np_3))
+    M_matrix = np.array([[1, 1 / 2 * np.exp(1j * 2 * theta[0]), 1 / 2 * np.exp(-2 * 1j * theta[0])],
+                         [1, 1 / 2 * np.exp(2 * 1j * theta[1]), 1 / 2 * np.exp(-2 * 1j * theta[1])],
+                         [1, 1 / 2 * np.exp(2 * 1j * theta[2]), 1 / 2 * np.exp(-2 * 1j * theta[2])]])
+    M_matrix_inv = np.linalg.inv(M_matrix)
+    fft_wide_field_np = M_matrix_inv[0, 0] * fft_wide_field_np_1 + M_matrix_inv[0, 1] * fft_wide_field_np_2 + \
+                        M_matrix_inv[0, 2] * fft_wide_field_np_3
+    wide_field_np = abs(np.fft.ifft2(np.fft.ifftshift(fft_wide_field_np)))
+    wide_field = torch.from_numpy(wide_field_np)
+    polarization_raio = torch.stack([wide_field_1 / wide_field, wide_field_1 / wide_field, wide_field_1 / wide_field, \
+                                     wide_field_2 / wide_field, wide_field_2 / wide_field, wide_field_2 / wide_field, \
+                                     wide_field_3 / wide_field, wide_field_3 / wide_field, wide_field_3 / wide_field],
+                                    dim=0)
+
+    return polarization_raio.unsqueeze(0)
+
 
 if __name__ == '__main__':
     train_net_parameters = load_configuration_parameters.load_train_net_config_paras()
@@ -251,7 +321,7 @@ if __name__ == '__main__':
         'Dropout_ratio': [1]
     }
 
-    SIM_data = SpeckleSIMDataLoad.SIM_data_load(train_directory_file, normalize=False, data_mode='only_raw_SIM_data')
+    SIM_data = SpeckleSIMDataLoad.SIM_data_load(train_directory_file, normalize=True, data_mode='only_raw_SIM_data')
     SIM_pattern = SpeckleSIMDataLoad.SIM_pattern_load(train_directory_file, normalize=False)
     # SIM_pattern = SIM_data_load(train_directory_file, normalize=False, data_mode='only_raw_SIM_data')
 
@@ -285,11 +355,10 @@ if __name__ == '__main__':
             break
         data_id += 1
 
-    SSIM, PSNR, best_SR = SR_reconstruction(SIM_data,input_num = 7)
+    SSIM, PSNR, best_SR = SR_reconstruction(SIM_data, input_num=5)
     if not best_SR.dim() == 4:
         best_SR = best_SR.reshape([1, 1, best_SR.size()[0], best_SR.size()[1]])
     common_utils.save_image_tensor2pillow(best_SR, save_file_directory)
     end_time = time.time()
 
     print(' SSIM:%f, PSNR:%f,time: %f ' % (SSIM, PSNR, end_time - start_time))
-

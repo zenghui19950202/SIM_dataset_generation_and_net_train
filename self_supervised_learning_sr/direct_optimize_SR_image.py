@@ -15,9 +15,11 @@ import math
 from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
+from simulation_data_generation import SRimage_metrics
+
 
 # import self_supervised_learning_sr.estimate_SIM_pattern
-# import numpy as np
+import numpy as np
 
 
 def try_gpu():
@@ -39,155 +41,142 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     data_id = 0
     for SIM_data, SIM_pattern in zip(SIM_data_dataloader, SIM_pattern_loader):
         SIM_raw_data = SIM_data[0]
+        LR_HR = SIM_data[1]
         if data_id == input_id:
             break
         data_id += 1
 
+    HR = LR_HR[:, :, :, 0]
+
+    polarization_ratio = calculate_polarization(SIM_raw_data)
+
     image_size = [SIM_raw_data.size()[2], SIM_raw_data.size()[3]]
-
-    temp = funcs.SinusoidalPattern(probability=1,image_size = image_size[0])
-    OTF = temp.OTF
-    psf = temp.psf_form(OTF)
-
-    psf_conv = funcs.psf_conv_generator(psf,device)
-
-    CTF = temp.CTF_form(fc_ratio=2 + 2*temp.pattern_frequency_ratio)
-    CTF = CTF.to(device)
-
-
-
-
-    # OTF_reconstruction = temp.OTF_form(fc_ratio=1 + temp.pattern_frequency_ratio)
-    # psf_reconstruction = temp.psf_form(OTF_reconstruction)
-    # psf_reconstruction_conv = funcs.psf_conv_generator(psf_reconstruction,device)
-
-    min_loss = 1e5
-    best_SR = torch.zeros(image_size, dtype=torch.float32, device=device)
 
     input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2,3,6])
     input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,2,3,6])
+    input_polarization_ratio = common_utils.pick_input_data(polarization_ratio,[0,1,2,3,6])
+
     # input_SIM_raw_data_normalized = processing_utils.pre_processing(input_SIM_raw_data)
 
-    # SR_image = SIM_data[1][:,:,:,1]
     wide_field_image = torch.mean(input_SIM_raw_data[:,0:3,:,:],dim=1)
     wide_field_image = wide_field_image / wide_field_image.max()
     # SR_image = forward_model.winier_deconvolution(wide_field_image,OTF)
     # SR_image = torch.rand_like(wide_field_image)
-    SR_image = wide_field_image
+
+    experimental_params = funcs.SinusoidalPattern(probability=1, image_size=image_size[0])
+    if experimental_params.upsample == True:
+        up_sample = torch.nn.UpsamplingBilinear2d(scale_factor=2)
+        SR_image = up_sample(copy.deepcopy(wide_field_image).unsqueeze(0))
+    else:
+        SR_image = copy.deepcopy(wide_field_image)
+
+    temp_input_SIM_pattern, estimated_pattern_parameters, _ = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
+        input_SIM_raw_data)
+
+    if experimental_params.upsample == True:
+        OTF = experimental_params.OTF_upsmaple
+        input_SIM_raw_data = up_sample(copy.deepcopy(input_SIM_raw_data).to(device))
+        input_polarization_ratio = up_sample(copy.deepcopy(input_polarization_ratio).to(device))
+        HR = up_sample(HR.unsqueeze(0))
+    else:
+        OTF = experimental_params.OTF
+        input_SIM_raw_data = input_SIM_raw_data.to(device)
+        input_polarization_ratio = input_polarization_ratio.to(device)
+    psf = experimental_params.psf_form(OTF)
+
+    psf_conv = funcs.psf_conv_generator(psf,device)
+
     psf_radius = math.floor(psf.size()[0] / 2)
 
-    mask = torch.zeros_like(input_SIM_raw_data, device=device)
+    mask = torch.zeros_like(temp_input_SIM_pattern, device=device)
     mask[:, :, psf_radius:-psf_radius, psf_radius:-psf_radius] = 1
     mask = 1
 
-    temp_input_SIM_pattern, estimated_pattern_parameters = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels(
-        input_SIM_raw_data)
     print(estimated_pattern_parameters)
 
-    OTF_reconstruction = temp.OTF_form(fc_ratio=1 + temp.pattern_frequency_ratio)
-    psf_reconstruction = temp.psf_form(OTF_reconstruction)
+    OTF_reconstruction = experimental_params.OTF_form(fc_ratio=1 + experimental_params.pattern_frequency_ratio,upsample = experimental_params.upsample)
+    psf_reconstruction = experimental_params.psf_form(OTF_reconstruction)
     psf_reconstruction_conv = funcs.psf_conv_generator(psf_reconstruction,device)
-
 
     experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size[0])
     xx, yy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
-
-    # delta_pattern_params = torch.zeros_like(estimated_pattern_parameters)
-
-    # delta_pattern_params.requires_grad = True
-
-    estimated_modulation_factor = estimated_pattern_parameters[:,2].clone().detach()
-    estimated_modulation_factor.requires_grad = True
 
     params = []
     SR_image = SR_image.to(device)
     SR_image.requires_grad = True
     params += [{'params': SR_image, 'weight_decay': weight_decay}]
-    params += [{'params': estimated_modulation_factor}]
     optimizer_pattern_params = optim.Adam(params, lr=0.01)
 
-    input_SIM_raw_data = input_SIM_raw_data.to(device)
     input_SIM_pattern = input_SIM_pattern.to(device)
     temp_input_SIM_pattern = temp_input_SIM_pattern.to(device)
-    # temp_input_SIM_pattern = input_SIM_pattern
-    # temp_input_SIM_pattern = input_SIM_pattern
-    # delta_pattern_params = estimated_pattern_parameters
-    reg_noise_std = 0.03
-    for epoch in range(num_epochs):
-        # net.train()  # Switch to training mode
 
-        # net_input_noise = wide_field_image.normal_() * reg_noise_std
-        # net_input_noise = net_input_noise.to(device)
+    for epoch in range(num_epochs):
 
         optimizer_pattern_params.zero_grad()
-        # temp_input_SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(temp_input_SIM_pattern,
-        #                                              estimated_pattern_parameters,
-        #                                              estimated_modulation_factor, xx, yy)
-        # SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(SIM_raw_data.shape, estimated_pattern_parameters,
-        #                                                            delta_pattern_params, xx, yy)
-
-        # SIM_raw_data_estimated = forward_model.positive_propagate(abs(SR_image+ net_input_noise), temp_input_SIM_pattern, psf_conv)
-        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image,temp_input_SIM_pattern, psf_conv)
-
+        # SIM_raw_data_estimated = forward_model.positive_propagate(SR_image*input_polarization_ratio,temp_input_SIM_pattern, psf_conv)
+        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image,
+                                                                  temp_input_SIM_pattern, psf_conv)
         SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image.detach(), 1, psf_reconstruction_conv)
-        mse_loss = criterion(SIM_raw_data_estimated,input_SIM_raw_data, mask)
-
-        # SR_complex = torch.stack([SR_image, torch.zeros_like(SR_image)], 2)
-        # FFT_SR = torch.fft(SR_complex, 2 )
-        # shifted_FFT_SR = forward_model.torch_2d_fftshift(FFT_SR)
-        # shifted_FFT_SR_intensity = pow( pow(shifted_FFT_SR[:,:,0],2) + pow(shifted_FFT_SR[:,:,1],2), 1/2)
-        # normalized_shifted_FFT_SR = torch.log(1+(shifted_FFT_SR_intensity))
-        # tv_loss = 1e-8 * loss_functions.tv_loss_calculate(normalized_shifted_FFT_SR)
-        #
-        # tv_loss = 1e-6 * loss_functions.tv_loss_calculate(abs(SR_image).squeeze())
-        #
-
-        # a = abs(SR_image).squeeze()
-        # tv_loss = 1e-6 * loss_functions.tv_loss_calculate(a)
-        # loss = mse_loss + tv_loss
-
+        mse_loss = criterion(SIM_raw_data_estimated,input_SIM_raw_data, 1, OTF = None,normalize=False)
+        a = abs(SR_image).squeeze()
+        tv_loss =  loss_functions.tv_loss_calculate(a)
+        # loss = mse_loss + 1e-6 * tv_loss
         loss = mse_loss
         loss.backward()
         optimizer_pattern_params.step()
 
-
         with torch.no_grad():
             train_loss = loss.float()
-            m = estimated_modulation_factor
 
-        print('epoch: %d/%d, train_loss: %f, m : %f' % (epoch + 1, num_epochs, train_loss, m[0]))
-        # SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(SIM_raw_data.shape,estimated_pattern_parameters,delta_pattern_params,xx,yy)
-        # print(delta_pattern_params)
+        print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
 
-        if (epoch + 1) % num_epochs == 0:
+    result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered,
+                                                                        estimated_pattern_parameters,experimental_parameters).squeeze()
+    common_utils.plot_single_tensor_image(result)
 
-            # SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters)
-            # result = SR_image_high_freq_and_notch_filtered[psf_radius: -psf_radius, psf_radius: -psf_radius]
-            #
-            # SR_image_notch_filtered = processing_utils.notch_filter(SR_image, estimated_pattern_parameters)
-            # result1 = forward_model.low_pass_filter(SR_image_notch_filtered.to(device),CTF)
-            # result1 = result1[psf_radius: -psf_radius, psf_radius: -psf_radius]
+    SR = result / result.max()
+    SR_np = SR.cpu().squeeze().detach().numpy() * 255
+    HR = HR / HR.max()
+    HR = HR.squeeze().numpy() * 255
+    SSIM = SRimage_metrics.calculate_ssim(SR_np, HR)
+    PSNR = SRimage_metrics.calculate_psnr_np(SR_np, HR)
+    print(' SSIM:%f, PSNR:%f ' % (SSIM, PSNR))
 
-            # result = processing_utils.notch_filter(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
-            # result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered, estimated_pattern_parameters).squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
-            result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image_high_freq_filtered,
-                                                                            estimated_pattern_parameters).squeeze()
-            common_utils.plot_single_tensor_image(result)
-            # common_utils.plot_single_tensor_image(SR_image_high_freq_filtered)
 
-            if min_loss > train_loss:
-                min_loss = train_loss
-                SR_image_high_freq_and_notch_filtered = processing_utils.notch_filter(SR_image_high_freq_filtered,
-                                                                                      estimated_pattern_parameters)
-                # best_SR = result[psf_radius: -psf_radius, psf_radius: -psf_radius]
-                best_SR = result
-                # best_SR =SR_image_high_freq_filtered.squeeze()[psf_radius: -psf_radius, psf_radius: -psf_radius]
-
-    return train_loss, best_SR
+    return train_loss, result
 
 def init_weights(m):
     if type(m) == nn.Linear or type(m) == nn.Conv2d:
         torch.nn.init.xavier_uniform_(m.weight)
+
+def calculate_polarization(SIM_raw_data):
+    SIM_data_three_direction = torch.stack(
+        [SIM_raw_data[:, 0, :, :], SIM_raw_data[:, 3, :, :], SIM_raw_data[:, 6, :, :]], dim=1)
+    _, estimated_pattern_parameters, _ = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
+        SIM_data_three_direction)
+    # print(estimated_pattern_parameters)
+    theta = torch.atan(estimated_pattern_parameters[:, 1] / estimated_pattern_parameters[:, 0])
+    wide_field_1 = torch.mean(SIM_raw_data[0, 0:3, :, :], dim=0)
+    wide_field_2 = torch.mean(SIM_raw_data[0, 3:6, :, :], dim=0)
+    wide_field_3 = torch.mean(SIM_raw_data[0, 6:9, :, :], dim=0)
+    wide_field_np_1, wide_field_np_2, wide_field_np_3 = wide_field_1.numpy(), wide_field_2.numpy(), wide_field_3.numpy()
+    fft_wide_field_np_1, fft_wide_field_np_2, fft_wide_field_np_3 = np.fft.fftshift(
+        np.fft.fft2(wide_field_np_1)), np.fft.fftshift(np.fft.fft2(wide_field_np_2)), np.fft.fftshift(
+        np.fft.fft2(wide_field_np_3))
+    M_matrix = np.array([[1, 1 / 2 * np.exp(1j * 2 * theta[0]), 1 / 2 * np.exp(-2 * 1j * theta[0])],
+                         [1, 1 / 2 * np.exp(2 * 1j * theta[1]), 1 / 2 * np.exp(-2 * 1j * theta[1])],
+                         [1, 1 / 2 * np.exp(2 * 1j * theta[2]), 1 / 2 * np.exp(-2 * 1j * theta[2])]])
+    M_matrix_inv = np.linalg.inv(M_matrix)
+    fft_wide_field_np = M_matrix_inv[0, 0] * fft_wide_field_np_1 + M_matrix_inv[0, 1] * fft_wide_field_np_2 + \
+                        M_matrix_inv[0, 2] * fft_wide_field_np_3
+    wide_field_np = abs(np.fft.ifft2(np.fft.ifftshift(fft_wide_field_np)))
+    wide_field = torch.from_numpy(wide_field_np)
+    polarization_raio = torch.stack([wide_field_1 / wide_field, wide_field_1 / wide_field, wide_field_1 / wide_field, \
+                                     wide_field_2 / wide_field, wide_field_2 / wide_field, wide_field_2 / wide_field, \
+                                     wide_field_3 / wide_field, wide_field_3 / wide_field, wide_field_3 / wide_field],
+                                    dim=0)
+
+    return polarization_raio.unsqueeze(0)
 
 def train_net():
     pass
@@ -213,7 +202,7 @@ if __name__ == '__main__':
         'Dropout_ratio': [1]
     }
 
-    SIM_data = SpeckleSIMDataLoad.SIM_data_load(train_directory_file, normalize=False, data_mode='only_raw_SIM_data')
+    SIM_data = SpeckleSIMDataLoad.SIM_data_load(train_directory_file, normalize=True, data_mode='only_raw_SIM_data')
     SIM_pattern = SpeckleSIMDataLoad.SIM_pattern_load(train_directory_file, normalize=False)
     # SIM_pattern = SIM_data_load(train_directory_file, normalize=False, data_mode='only_raw_SIM_data')
 
@@ -222,7 +211,7 @@ if __name__ == '__main__':
 
     random.seed(60)  # 设置随机种子
     # min_loss = 1e5
-    num_epochs = 100
+    num_epochs = 400
 
     random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
     lr = random_params['learning_rate']
@@ -232,7 +221,7 @@ if __name__ == '__main__':
 
     device = try_gpu()
     # criterion = nn.MSELoss()
-    criterion = loss_functions.MSE_loss()
+    criterion = loss_functions.MSE_loss_2()
     num_raw_SIMdata, output_nc, num_downs = 2, 1, 5
     # SIMnet = Unet_for_self_supervised.UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=False,input_mode = 'only_input_SIM_images', use_dropout=False)
     # SIMnet = Networks_Unet_GAN.UnetGenerator(num_raw_SIMdata, output_nc, num_downs, ngf=64, LR_highway=False,
