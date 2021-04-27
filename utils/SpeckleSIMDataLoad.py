@@ -85,9 +85,11 @@ class SIM_data_load(data.Dataset):
             self.image_size = image_size
 
             if self.normalize == True:
+                # transform = transforms.Compose(
+                #     [transforms.ToTensor(),  # 函数接受PIL Image或numpy.ndarray，将其先由HWC转置为CHW格式，再转为float后每个像素除以255.
+                #      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
                 transform = transforms.Compose(
-                    [transforms.ToTensor(),  # 函数接受PIL Image或numpy.ndarray，将其先由HWC转置为CHW格式，再转为float后每个像素除以255.
-                     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+                    [transforms.ToTensor()])
             else:
                 transform = transforms.Compose(
                     [transforms.ToTensor()])
@@ -108,6 +110,8 @@ class SIM_data_load(data.Dataset):
                 SIM_image_PIL = Image.open(SIM_data_image_directoty)
                 SIM_image_PIL = SIM_image_PIL.convert('RGB')
                 SIMdata_normalized_image_tensor = transform(SIM_image_PIL)
+                if self.normalize == True:
+                    SIMdata_normalized_image_tensor = SIMdata_normalized_image_tensor/ SIMdata_normalized_image_tensor.max()
                 SIM_image_data[i, :, :] = SIMdata_normalized_image_tensor[0, :, :]
                 # SIM_image_data[i, :, :] = torch.zeros_like(SIMdata_normalized_image_tensor[0,:,:])
 

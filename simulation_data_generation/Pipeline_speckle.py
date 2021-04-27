@@ -31,7 +31,7 @@ class Pipeline_speckle(Pipeline):
             raise Exception("error Input output directory")
 
 
-    def sample(self, n, multi_threaded=True,data_type = 'train',data_num = 16):
+    def sample(self, n, multi_threaded=True,data_type = 'train',data_num = 9):
         """
         Generate :attr:`n` number of samples from the current pipeline.
 

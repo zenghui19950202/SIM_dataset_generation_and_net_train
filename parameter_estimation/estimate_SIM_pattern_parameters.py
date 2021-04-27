@@ -34,13 +34,6 @@ def calculate_phase(image,pixel_frequency):
     translated_fft_image_np = fftshift(fft2(image_np_times_phase_gradient, axes=(0, 1)), axes=(0, 1))
     estimated_phase = -np.angle(sum(sum(np.conj(translated_fft_image_np) * fft_image_np)))
 
-    # abs_translated_fft_image_np = abs(translated_fft_image_np)
-    # abs_fft_translated_image_tensor = torch.from_numpy(np.log(abs_translated_fft_image_np+1))
-    # common_utils.plot_single_tensor_image(abs_fft_translated_image_tensor)
-    # abs_fft_image_np = abs(fft_image_np)
-    # abs_fft_image_np_tensor = torch.from_numpy(np.log(abs_fft_image_np + 1))
-    # common_utils.plot_single_tensor_image(abs_fft_image_np_tensor)
-
     return estimated_phase
 
 def calculate_spatial_frequency (image):
@@ -77,52 +70,6 @@ def calculate_spatial_frequency (image):
 
     return pixel_frequency,estimated_modulation_facotr,I0
 
-# def find_frequency_peak(image_np ,experimental_parameters):
-#     # half_image_size = experimental_parameters.image_size / 2
-#     fft_numpy_image = fftshift(fft2(image_np, axes=(0, 1)), axes=(0, 1))
-#     abs_fft_np_image = abs(fft_numpy_image)
-#     f0 = 0.5 * experimental_parameters.f_cutoff
-#     f = experimental_parameters.f
-#     mask_high_freq = torch.where(f > f0, torch.Tensor([1]), torch.Tensor([0])).numpy()
-#     mask_right_half = torch.where(f > 0, torch.Tensor([1]), torch.Tensor([0])).numpy()
-#     filtered_fft_raw_SIM_imag = abs_fft_np_image * mask_high_freq * mask_right_half
-#     high_freq_fft_raw_SIM_imag = fft_numpy_image * mask_high_freq
-#
-#     peak_position_pixel = np.unravel_index(np.argmax(filtered_fft_raw_SIM_imag), filtered_fft_raw_SIM_imag.shape)
-#     x0 = torch.tensor(peak_position_pixel)
-#
-#     max_iteritive = 400
-#     peak_subpixel_location = maxmize_shift_peak_intesity(image_np, peak_position_pixel, max_iteritive)
-#     frequency_peak = x0+ peak_subpixel_location
-#     # result = minimize(fun=shift_correlation, x0=x0,args=(image_np,high_freq_fft_raw_SIM_imag),bounds=[(x0-0.5).numpy(),(x0+0.5).numpy()])
-#     # frequency_peak = result['x']
-#     # print(result.success)
-# # TODO:不太能用，可能没梯度，需要更改函数，
-#     # interp_scope = 51
-#     # xx, yy, _, _ = experimental_parameters.GridGenerate(interp_scope, grid_mode='pixel')
-#     # xx = xx + peak_position[0]
-#     # yy = yy + peak_position[1]
-#     # interp_values = abs_fft_np_SIM_image[peak_position[0]-int((interp_scope-1)/2) :peak_position[0] + int((interp_scope-1)/2)+1,
-#     #                                      peak_position[1]-int((interp_scope-1)/2) :peak_position[1] + int((interp_scope-1)/2)+1]
-#     # normalized_interp_values = -np.log(1 + interp_values)
-#     # f1 = interp2d(xx, yy,normalized_interp_values , kind='cubic')
-#     # result = minimize(fun=minus_interp, x0=peak_position,args=(f1), method='TNC',options={'maxiter': 400})
-#     # frequency_peak = result['x']
-#
-#     # xx, yy, _, _ = experimental_parameters.GridGenerate(256, grid_mode='pixel')
-#     # location = np.dstack((xx,yy)).reshape(-1,2)
-#     # values = abs_fft_np_SIM_image.reshape(-1,1)
-#     # grid_num = 200
-#     # grid_xx, grid_yy = np.meshgrid(np.arange(-grid_num / 2, grid_num / 2, 1),
-#     #                         np.arange(-grid_num / 2, grid_num / 2, 1))
-#     # grid_xx = grid_xx / grid_num *2 + peak_position[0]
-#     # grid_yy = grid_yy / grid_num *2 + peak_position[1]
-#     # betagriddata = griddata(np.array([xx.numpy().ravel(), yy.numpy().ravel()]).T, values.ravel(),
-#     #                                np.array([grid_xx.ravel(), grid_yy.ravel()]).T)
-#     # grid_z2 = griddata(location, values, (grid_xx, grid_yy), method='linear')
-#     # print(grid_z2[0][1])
-#
-#     return frequency_peak
 
 def shift_freq_domain_peak_intensity(subpixel_shift,image_np,peak_position_pixel):
     image_size = image_np.shape[0]
@@ -134,11 +81,6 @@ def shift_freq_domain_peak_intensity(subpixel_shift,image_np,peak_position_pixel
     normalized_translated_fft_image_np = np.log(abs(translated_fft_image_np) + 1)
     normalized_translated_fft_image_np = abs(translated_fft_image_np)
     peak_intesity = normalized_translated_fft_image_np[peak_position_pixel[0],peak_position_pixel[1]]
-    # np.unravel_index(np.argmax(normalized_translated_fft_image_np), normalized_translated_fft_image_np.shape)
-    #
-    # abs_fft_translated_image_tensor = torch.from_numpy(normalized_translated_fft_image_np)
-    # common_utils.plot_single_tensor_image(abs_fft_translated_image_tensor)
-    # print(subpixel_shift,peak_intesity)
 
     return peak_intesity
 

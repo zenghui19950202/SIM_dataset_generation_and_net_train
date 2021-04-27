@@ -55,9 +55,8 @@ def estimate_SIM_pattern_and_parameters_of_multichannels(SIM_data):
     estimated_SIM_pattern_parameters[:,4] = estimated_SIM_pattern_parameters[:,4] / estimated_SIM_pattern_parameters[:,4].max()
     return estimated_SIM_pattern, estimated_SIM_pattern_parameters
 
-def estimate_SIM_pattern_and_parameters_of_multichannels_V1(SIM_data):
+def estimate_SIM_pattern_and_parameters_of_multichannels_V1(SIM_data,experimental_parameters):
     batch_size, input_channel, image_size, _ = SIM_data.shape
-    experimental_parameters = SinusoidalPattern(probability=1, image_size=image_size)
     if experimental_parameters.upsample == True:
         SR_image_size = experimental_parameters.SR_image_size
         estimated_SIM_pattern = torch.zeros([batch_size, input_channel, SR_image_size, SR_image_size],
@@ -90,7 +89,7 @@ def estimate_SIM_pattern_and_parameters_of_multichannels_V1(SIM_data):
             m = estimate_SIM_pattern_parameters.calculate_modulation_factor(rolled_one_channel_SIM_data,
                                                                             estimated_spatial_frequency,
                                                                             estimated_phase_rolled)
-        # m = 1
+        m = 1
         estimated_SIM_pattern_parameters[i, :] = torch.tensor(
             [*estimated_spatial_frequency, m, torch.tensor(estimated_phase),torch.tensor(I0)])
         if experimental_parameters.upsample == True:

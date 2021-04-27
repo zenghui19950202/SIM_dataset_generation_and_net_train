@@ -313,6 +313,26 @@ def pick_input_data(SIM_data,data_id = None):
 
     return SIM_data_input
 
+def input_data_pick(image,input_num):
+    if input_num == 5:
+        picked_image = pick_input_data(image, [0, 1, 2, 3, 6])
+    elif input_num == 6:
+        picked_image = pick_input_data(image, [0, 1, 2, 3, 6, 4])
+    elif input_num == 7:
+        picked_image = pick_input_data(image, [0, 1, 2, 3, 6, 4, 7])
+    elif input_num == 8:
+        picked_image = pick_input_data(image, [0, 1, 2, 3, 6, 4, 7, 5])
+    elif input_num == 9:
+        picked_image = pick_input_data(image)
+    elif input_num == 4:
+        picked_image = pick_input_data(image, [0, 3, 6, 1])
+    elif input_num == 1:
+        picked_image = pick_input_data(image, [2])
+    elif input_num == 3:
+        picked_image = pick_input_data(image, [0, 3, 6])
+
+    return picked_image
+
 if __name__ == '__main__':
     source_directory = '/home/common/zenghui/test_for_self_9_frames_supervised_SR_net/seal/SR_image.png'
     HR_image = Image.open(source_directory)

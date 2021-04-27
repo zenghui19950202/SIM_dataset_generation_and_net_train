@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 from simulation_data_generation import SRimage_metrics
-
+from self_supervised_learning_sr.direct_optimize_polarization_SR_in_frequency_domain import calculate_polarization
 
 # import self_supervised_learning_sr.estimate_SIM_pattern
 import numpy as np
@@ -48,9 +48,11 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
 
     HR = LR_HR[:, :, :, 0]
 
-    polarization_ratio = calculate_polarization(SIM_raw_data)
+
 
     image_size = [SIM_raw_data.size()[2], SIM_raw_data.size()[3]]
+    experimental_params = funcs.SinusoidalPattern(probability=1, image_size=image_size[0])
+    polarization_ratio = calculate_polarization(SIM_raw_data, experimental_params)
 
     input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2,3,6])
     input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,2,3,6])
@@ -63,7 +65,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     # SR_image = forward_model.winier_deconvolution(wide_field_image,OTF)
     # SR_image = torch.rand_like(wide_field_image)
 
-    experimental_params = funcs.SinusoidalPattern(probability=1, image_size=image_size[0])
+
     if experimental_params.upsample == True:
         up_sample = torch.nn.UpsamplingBilinear2d(scale_factor=2)
         SR_image = up_sample(copy.deepcopy(wide_field_image).unsqueeze(0))
@@ -71,7 +73,7 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
         SR_image = copy.deepcopy(wide_field_image)
 
     temp_input_SIM_pattern, estimated_pattern_parameters, _ = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
-        input_SIM_raw_data)
+        input_SIM_raw_data,experimental_params)
 
     if experimental_params.upsample == True:
         OTF = experimental_params.OTF_upsmaple
@@ -99,13 +101,13 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     psf_reconstruction_conv = funcs.psf_conv_generator(psf_reconstruction,device)
 
     experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size[0])
-    xx, yy, _, _ = experimental_parameters.GridGenerate(image_size[0], grid_mode='pixel')
+    xx, yy, _, _ = experimental_parameters.GridGenerate( grid_mode='pixel')
 
     params = []
     SR_image = SR_image.to(device)
     SR_image.requires_grad = True
     params += [{'params': SR_image, 'weight_decay': weight_decay}]
-    optimizer_pattern_params = optim.Adam(params, lr=0.01)
+    optimizer_pattern_params = optim.Adam(params, lr=0.005)
 
     input_SIM_pattern = input_SIM_pattern.to(device)
     temp_input_SIM_pattern = temp_input_SIM_pattern.to(device)
@@ -149,35 +151,6 @@ def init_weights(m):
     if type(m) == nn.Linear or type(m) == nn.Conv2d:
         torch.nn.init.xavier_uniform_(m.weight)
 
-def calculate_polarization(SIM_raw_data):
-    SIM_data_three_direction = torch.stack(
-        [SIM_raw_data[:, 0, :, :], SIM_raw_data[:, 3, :, :], SIM_raw_data[:, 6, :, :]], dim=1)
-    _, estimated_pattern_parameters, _ = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
-        SIM_data_three_direction)
-    # print(estimated_pattern_parameters)
-    theta = torch.atan(estimated_pattern_parameters[:, 1] / estimated_pattern_parameters[:, 0])
-    wide_field_1 = torch.mean(SIM_raw_data[0, 0:3, :, :], dim=0)
-    wide_field_2 = torch.mean(SIM_raw_data[0, 3:6, :, :], dim=0)
-    wide_field_3 = torch.mean(SIM_raw_data[0, 6:9, :, :], dim=0)
-    wide_field_np_1, wide_field_np_2, wide_field_np_3 = wide_field_1.numpy(), wide_field_2.numpy(), wide_field_3.numpy()
-    fft_wide_field_np_1, fft_wide_field_np_2, fft_wide_field_np_3 = np.fft.fftshift(
-        np.fft.fft2(wide_field_np_1)), np.fft.fftshift(np.fft.fft2(wide_field_np_2)), np.fft.fftshift(
-        np.fft.fft2(wide_field_np_3))
-    M_matrix = np.array([[1, 1 / 2 * np.exp(1j * 2 * theta[0]), 1 / 2 * np.exp(-2 * 1j * theta[0])],
-                         [1, 1 / 2 * np.exp(2 * 1j * theta[1]), 1 / 2 * np.exp(-2 * 1j * theta[1])],
-                         [1, 1 / 2 * np.exp(2 * 1j * theta[2]), 1 / 2 * np.exp(-2 * 1j * theta[2])]])
-    M_matrix_inv = np.linalg.inv(M_matrix)
-    fft_wide_field_np = M_matrix_inv[0, 0] * fft_wide_field_np_1 + M_matrix_inv[0, 1] * fft_wide_field_np_2 + \
-                        M_matrix_inv[0, 2] * fft_wide_field_np_3
-    wide_field_np = abs(np.fft.ifft2(np.fft.ifftshift(fft_wide_field_np)))
-    wide_field = torch.from_numpy(wide_field_np)
-    polarization_raio = torch.stack([wide_field_1 / wide_field, wide_field_1 / wide_field, wide_field_1 / wide_field, \
-                                     wide_field_2 / wide_field, wide_field_2 / wide_field, wide_field_2 / wide_field, \
-                                     wide_field_3 / wide_field, wide_field_3 / wide_field, wide_field_3 / wide_field],
-                                    dim=0)
-
-    return polarization_raio.unsqueeze(0)
-
 def train_net():
     pass
 if __name__ == '__main__':
@@ -211,7 +184,7 @@ if __name__ == '__main__':
 
     random.seed(60)  # 设置随机种子
     # min_loss = 1e5
-    num_epochs = 400
+    num_epochs = 200
 
     random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
     lr = random_params['learning_rate']

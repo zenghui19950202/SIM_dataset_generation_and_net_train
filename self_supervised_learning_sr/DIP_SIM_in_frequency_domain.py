@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 from self_supervised_learning_sr.direct_optimize_polarization_SR_in_frequency_domain import calculate_polarization
-
+from self_supervised_learning_sr.direct_optimize_polarization_SR_in_frequency_domain import unsample_process
 # import self_supervised_learning_sr.estimate_SIM_pattern
 import numpy as np
 
@@ -35,7 +35,7 @@ def try_gpu():
 
 
 def train(net, SIM_raw_data, polarization_ratio, net_input, criterion, num_epochs, device, experimental_parameters, lr=None,
-          weight_decay=1e-5):
+          weight_decay=1e-5,input_num = 3):
     """Train and evaluate a model with CPU or GPU."""
     print('training on', device)
     net = net.to(device)
@@ -44,17 +44,17 @@ def train(net, SIM_raw_data, polarization_ratio, net_input, criterion, num_epoch
     else:
         OTF = experimental_parameters.OTF
     psf = experimental_parameters.psf_form(OTF)
+    CTF = experimental_parameters.CTF_form(fc_ratio=1).to(device)
 
     psf_conv = funcs.psf_conv_generator(psf,device)
 
     noise = net_input.detach().clone()
     reg_noise_std = 0.03
     min_loss = 1e5
-    image_size = [net_input.size()[2], net_input.size()[3]]
+    image_size = [SIM_raw_data.size()[2], SIM_raw_data.size()[3]]
     best_SR = torch.zeros(image_size, dtype=torch.float32, device=device)
     end_flag = 0
 
-    input_num = 5
     input_SIM_raw_data = common_utils.input_data_pick(SIM_raw_data,input_num)
     polarization_ratio = common_utils.input_data_pick(polarization_ratio, input_num)
 
@@ -84,21 +84,22 @@ def train(net, SIM_raw_data, polarization_ratio, net_input, criterion, num_epoch
     if experimental_parameters.upsample == True:
         upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         input_polarization_ratio = upsample(polarization_ratio).to(device)
-        input_SIM_raw_data = upsample(input_SIM_raw_data).to(device)
     else:
         input_polarization_ratio = polarization_ratio.to(device)
-        input_SIM_raw_data = input_SIM_raw_data.to(device)
+
 
     mask = torch.zeros_like(input_SIM_raw_data, device=device)
     mask[:, :, psf_radius:-psf_radius, psf_radius:-psf_radius] = 1
     mask[:]=1
 
     temp_input_SIM_pattern = temp_input_SIM_pattern.to(device)
+    input_SIM_raw_data = input_SIM_raw_data.to(device)
     net = net.to(device)
 
     count_epoch = 0
     switch_flag = 1
     min_loss = 1e5
+    input_SIM_raw_data_fft = unsample_process(image_size, input_SIM_raw_data, CTF, experimental_parameters.upsample)
     for epoch in range(num_epochs):
         net.train()  # Switch to training mode
         net_input_noise = net_input + (noise.normal_() * reg_noise_std)
@@ -108,21 +109,41 @@ def train(net, SIM_raw_data, polarization_ratio, net_input, criterion, num_epoch
 
         SR_image = net(net_input_noise)
         SR_image = abs(SR_image)
-        tv_loss = 1e-7 * loss_functions.tv_loss_calculate(SR_image)
+        tv_loss = 1e-5 * loss_functions.tv_loss_calculate(SR_image)
         # tv_loss=0
         loss = tv_loss
-        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image * input_polarization_ratio, temp_input_SIM_pattern.detach(),psf_conv)
-        # SIM_raw_data_estimated = forward_model.positive_propagate(SR_image,temp_input_SIM_pattern.detach(), psf_conv)
-        mse_loss = criterion(SIM_raw_data_estimated, input_SIM_raw_data, mask,normalize = False)
-        loss+=mse_loss
 
+        if experimental_parameters.upsample == True:
+            OTF = experimental_parameters.OTF_upsmaple.to(device)
+        else:
+            OTF = experimental_parameters.OTF.to(device)
+
+
+        for i in range(estimated_pattern_parameters.size()[0]):
+            theta = torch.atan(estimated_pattern_parameters[i, 1] / estimated_pattern_parameters[i, 0])
+            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1 + 0.6 * torch.cos(2 * theta - 2 * polarization_direction))
+            sample_light_field = SR_image * temp_input_SIM_pattern[:, i, :, :] * input_polarization_ratio[:, i, :, :]
+            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :]
+            sample_light_field_complex = torch.stack(
+                [sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
+            SIM_raw_data_fft_estimated = forward_model.torch_2d_fftshift(
+                torch.fft((sample_light_field_complex), 2)) * OTF.unsqueeze(2)
+
+            mse_loss = criterion(SIM_raw_data_fft_estimated, input_SIM_raw_data_fft[:, i, :, :, :],
+                                 1, OTF, normalize=True, deconv=False)
+            loss += mse_loss
+        # loss+=   loss_functions.tv_loss_calculate(abs(SR_image))
+        # for param_group in optimizer_SR_and_polarization.param_groups:
+        #     lr = lr
+        #     param_group['lr'] = lr
         loss.backward()
         optimizer_net.step()
 
         with torch.no_grad():
             train_loss = loss.float()
 
-        print('epoch: %d/%d, train_loss: %f  MSE_loss:%f , tv_loss: %f' % (epoch + 1, num_epochs, train_loss, mse_loss,tv_loss ))
+        print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
+
         # SIM_pattern = estimate_SIM_pattern.fine_adjust_SIM_pattern(input_SIM_raw_data,estimated_pattern_parameters,delta_pattern_params,xx,yy)
         # print(delta_pattern_params)
         if epoch == 999:  # safe checkpoint
@@ -175,7 +196,7 @@ def init_weights(m):
 
 def train_net():
     param_grid = {
-        'learning_rate': [0.005],
+        'learning_rate': [0.001],
         'batch_size': [1],
         'weight_decay': [1e-5],
         'Dropout_ratio': [1]
@@ -188,7 +209,7 @@ def train_net():
     Dropout_ratio = random_params['Dropout_ratio']
 
     device = try_gpu()
-    criterion = loss_functions.MSE_loss()
+    criterion = loss_functions.MSE_loss_2()
     num_raw_SIMdata, output_nc, num_downs = 3, 1, 5
 
     SIMnet = Unet_NC2020.UNet(num_raw_SIMdata, output_nc, input_mode='input_all_images', LR_highway=False)
@@ -199,7 +220,7 @@ def train_net():
 
     start_time = time.time()
     train_loss, best_SR = train(SIMnet, input_SIM_data, input_polarization_ratio, net_input, criterion, num_epochs,
-                                device, experimental_params, lr, weight_decay)
+                                device, experimental_params, lr, weight_decay, input_num = 4)
     end_time = time.time()
     best_SR = best_SR.reshape([1, 1, best_SR.size()[0], best_SR.size()[1]])
     common_utils.save_image_tensor2pillow(best_SR, save_file_directory)
@@ -239,7 +260,7 @@ def initialize_data(num_raw_SIMdata = 2):
     SIM_data_dataloader = DataLoader(SIM_data, batch_size=1)
 
 
-    random.seed(60)  # 设置随机种子
+    random.seed(50)  # 设置随机种子
 
     input_id = 1
     data_id = 0
@@ -251,7 +272,6 @@ def initialize_data(num_raw_SIMdata = 2):
 
     LR_HR = input_SIM_data[1]
     SIM_raw_data = input_SIM_data[0]
-
 
 
     image_size = torch.tensor([SIM_raw_data.size()[2], SIM_raw_data.size()[3]])

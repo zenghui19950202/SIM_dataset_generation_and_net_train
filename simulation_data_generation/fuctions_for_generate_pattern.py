@@ -81,14 +81,15 @@ class SinusoidalPattern(Operations.Operation):
             self.OTF_upsmaple = self.OTF_form(fc_ratio=1,upsample = True)
         else:
             self.upsample = False
+            self.xx, self.yy, self.fx, self.fy = self.GridGenerate()
+            self.f = pow((self.fx ** 2 + self.fy ** 2), 1 / 2)  # The spatial freqneucy fr=sqrt( fx^2 + fy^2 )
+        self.xx, self.yy, self.fx, self.fy = self.GridGenerate()
+
+        self.f = pow((self.fx ** 2 + self.fy ** 2), 1 / 2)
+        self.OTF = self.OTF_form(fc_ratio=1, upsample=False)
 
         # self.upsample = True
 
-        self.xx, self.yy, self.fx, self.fy = self.GridGenerate(self.image_size)
-
-        self.f = pow((self.fx ** 2 + self.fy ** 2), 1 / 2)  # The spatial freqneucy fr=sqrt( fx^2 + fy^2 )
-
-        self.OTF = self.OTF_form(fc_ratio=1)
         self.CTF = self.CTF_form(fc_ratio=1)
         Operations.Operation.__init__(self, probability)
 
