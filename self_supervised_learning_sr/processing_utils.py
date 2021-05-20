@@ -163,9 +163,11 @@ def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters
             spatial_freq_x_positive[i,:] = spatial_freq[i, :]
         elif input_num == 4:
             spatial_freq_x_positive[i,:] = spatial_freq[i, :]
+        elif input_num == 6:
+            spatial_freq_x_positive[i,:] = torch.mean(spatial_freq[0 + 2 * i:2 + 2 * i, :], dim=0)
         else:
             if i == 0:
-                spatial_freq_x_positive[i,:] = torch.mean(spatial_freq[0:3, :], dim=0)
+                spatial_freq_x_positive[i,:] = spatial_freq[i, :]
             else:
                 spatial_freq_x_positive[i,:] = spatial_freq[2 + i, :]
         if spatial_freq_x_positive[i,0] < 0:
@@ -191,7 +193,8 @@ def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters
 
     SR_image_fft = forward_model.torch_2d_fftshift(torch.fft((SR_image_complex), 2))
     # SR_image_fft_filtered = SR_image_fft * (1-notch_filter).unsqueeze(2) * CTF * apodization_function
-    SR_image_fft_filtered = SR_image_fft * (1 - notch_filter).unsqueeze(2) * CTF
+    # SR_image_fft_filtered = SR_image_fft * (1 - notch_filter).unsqueeze(2) * CTF
+    SR_image_fft_filtered = SR_image_fft * (1 - notch_filter).unsqueeze(2)
     SR_image_filtered_complex = torch.ifft(forward_model.torch_2d_ifftshift(SR_image_fft_filtered),2)
 
     SR_image_filtered = forward_model.complex_stack_to_intensity(SR_image_filtered_complex)
@@ -267,4 +270,6 @@ def filter_for_computable_freq(SR_image, estimated_pattern_parameters):
     SR_image_filtered = forward_model.complex_stack_to_intensity(SR_image_filtered_complex)
 
     return SR_image_filtered
+
+
 

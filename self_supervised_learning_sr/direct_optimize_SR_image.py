@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
 from simulation_data_generation.fuctions_for_generate_pattern import SinusoidalPattern
 from simulation_data_generation import SRimage_metrics
-from self_supervised_learning_sr.direct_optimize_polarization_SR_in_frequency_domain import calculate_polarization
+from parameter_estimation.estimate_polarizaion import calculate_polarization_ratio
 
 # import self_supervised_learning_sr.estimate_SIM_pattern
 import numpy as np
@@ -25,7 +25,7 @@ import numpy as np
 def try_gpu():
     """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
     if torch.cuda.is_available():
-        device = torch.device('cuda:4')
+        device = torch.device('cuda:3')
     else:
         device = torch.device('cpu')
     return device
@@ -52,11 +52,11 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
 
     image_size = [SIM_raw_data.size()[2], SIM_raw_data.size()[3]]
     experimental_params = funcs.SinusoidalPattern(probability=1, image_size=image_size[0])
-    polarization_ratio = calculate_polarization(SIM_raw_data, experimental_params)
+    polarization_ratio = calculate_polarization_ratio(SIM_raw_data, experimental_params)
 
-    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,2,3,6])
-    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,2,3,6])
-    input_polarization_ratio = common_utils.pick_input_data(polarization_ratio,[0,1,2,3,6])
+    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,3,4,6,7])
+    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,3,4,6,7])
+    input_polarization_ratio = common_utils.pick_input_data(polarization_ratio,[0,1,3,4,6,7])
 
     # input_SIM_raw_data_normalized = processing_utils.pre_processing(input_SIM_raw_data)
 
@@ -115,11 +115,11 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     for epoch in range(num_epochs):
 
         optimizer_pattern_params.zero_grad()
-        # SIM_raw_data_estimated = forward_model.positive_propagate(SR_image*input_polarization_ratio,temp_input_SIM_pattern, psf_conv)
-        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image,
-                                                                  temp_input_SIM_pattern, psf_conv)
+        SIM_raw_data_estimated = forward_model.positive_propagate(SR_image*input_polarization_ratio,temp_input_SIM_pattern, psf_conv)
+        # SIM_raw_data_estimated = forward_model.positive_propagate(SR_image,
+        #                                                           temp_input_SIM_pattern, psf_conv)
         SR_image_high_freq_filtered = forward_model.positive_propagate(SR_image.detach(), 1, psf_reconstruction_conv)
-        mse_loss = criterion(SIM_raw_data_estimated,input_SIM_raw_data, 1, OTF = None,normalize=False)
+        mse_loss = criterion(SIM_raw_data_estimated,input_SIM_raw_data, 1, OTF = None,normalize=True)
         a = abs(SR_image).squeeze()
         tv_loss =  loss_functions.tv_loss_calculate(a)
         # loss = mse_loss + 1e-6 * tv_loss
@@ -184,7 +184,7 @@ if __name__ == '__main__':
 
     random.seed(60)  # 设置随机种子
     # min_loss = 1e5
-    num_epochs = 200
+    num_epochs = 800
 
     random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
     lr = random_params['learning_rate']

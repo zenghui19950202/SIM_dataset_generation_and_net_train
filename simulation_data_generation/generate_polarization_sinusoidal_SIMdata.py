@@ -58,7 +58,8 @@ class polarization_Sinusoidal_pattern(SinusoidalPattern):
         # xx, yy, fx, fy = self.GridGenerate(image)
         SinPatternPIL_Image = []
         SIMdata_PIL_Image = []
-        random_initial_direction_phase = random.random() * 2 * math.pi
+        # random_initial_direction_phase = random.random() * 2 * math.pi
+        random_initial_direction_phase = 1/12  * math.pi
         for i in range(3):
             modulation_factor = random.random() / 2 + 0.5
             # modulation_factor = 0.05
@@ -70,7 +71,7 @@ class polarization_Sinusoidal_pattern(SinusoidalPattern):
             # random_initial_phase = random.random() * 2 * math.pi
             for j in range(self.NumPhase):
                 phase = j * 2 * math.pi / self.NumPhase + random_initial_phase
-                SIMdata_OTF_filter_gaussian_noise_PIL, SinPattern_PIL = self.generate_single_polarization_SIM_data(image,
+                SIMdata_OTF_filter_gaussian_noise_PIL, SinPattern_PIL,absorption_efficiency = self.generate_single_polarization_SIM_data(image,
                                                                                                       SpatialFrequencyX,
                                                                                                       SpatialFrequencyY,
                                                                                                       modulation_factor,
@@ -78,6 +79,9 @@ class polarization_Sinusoidal_pattern(SinusoidalPattern):
 
                 SIMdata_PIL_Image.append(SIMdata_OTF_filter_gaussian_noise_PIL)
                 SinPatternPIL_Image.append(SinPattern_PIL)
+                save_name = SourceFileDirectory+'/SIMdata_SR_train/'+str(i*self.NumPhase+j) + "absorption_efficiency.pt"
+
+                torch.save(absorption_efficiency,save_name)
 
 
         return SIMdata_PIL_Image + SinPatternPIL_Image
@@ -87,8 +91,9 @@ class polarization_Sinusoidal_pattern(SinusoidalPattern):
         SinPattern = (torch.cos(
             phase + 2 * math.pi * (
                     SpatialFrequencyX * xx + SpatialFrequencyY * yy)) * modulation_factor + 1) / 2
-        polarization_angle = torch.atan2(xx,yy)
-        absorption_efficiency = 1 - 0.7 * torch.cos(2* (theta-polarization_angle))
+        polarization_angle = torch.atan2(yy,xx)
+        # polarization_angle = torch.rand_like(xx)
+        absorption_efficiency = 1 - 0.4 * torch.cos(2* (theta-polarization_angle))
         OTF = self.OTF
         SIMdata_OTF_filter = self.OTF_Filter(SinPattern * image * absorption_efficiency, OTF)
         SIMdata_OTF_filter_gaussian_noise = self.add_gaussian_noise(SIMdata_OTF_filter)
@@ -97,21 +102,26 @@ class polarization_Sinusoidal_pattern(SinusoidalPattern):
         SIMdata_OTF_filter_gaussian_noise).convert('RGB')
         SinPattern = SinPattern.float()
         SinPattern_PIL = transforms.ToPILImage()(SinPattern).convert('RGB')
+        absorption_efficiency_PIL = transforms.ToPILImage()(absorption_efficiency).convert('RGB')
+        polarization_angle_PIL = transforms.ToPILImage()(polarization_angle + polarization_angle.min()).convert('RGB')
 
-        return SIMdata_OTF_filter_gaussian_noise_PIL, SinPattern_PIL
+
+        return SIMdata_OTF_filter_gaussian_noise_PIL, absorption_efficiency_PIL, absorption_efficiency
 
 
 
 
 if __name__ == '__main__':
     data_generation_parameters = load_configuration_parameters.load_data_generation_config_paras()
-    train_directory = data_generation_parameters['SourceFileDirectory']  + '/train'
-    valid_directory = data_generation_parameters['SourceFileDirectory']  + '/valid'
+    SourceFileDirectory = data_generation_parameters['SourceFileDirectory']
+    train_directory = SourceFileDirectory  + '/train'
+    valid_directory = SourceFileDirectory  + '/valid'
+    NumPhase = data_generation_parameters['NumPhase']
 
     data_num = data_generation_parameters['data_num']
     image_size = data_generation_parameters['image_size']
 
     p = Pipeline_speckle.Pipeline_speckle(source_directory=train_directory, output_directory="../SIMdata_SR_train")
     p.add_operation(polarization_Sinusoidal_pattern(probability=1))
-    p.sample(1,multi_threaded=False,data_type='train',data_num = 9)
+    p.sample(1,multi_threaded=False,data_type='train',data_num = 3*NumPhase)
 

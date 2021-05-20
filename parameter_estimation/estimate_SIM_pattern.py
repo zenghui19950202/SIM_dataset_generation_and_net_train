@@ -89,7 +89,7 @@ def estimate_SIM_pattern_and_parameters_of_multichannels_V1(SIM_data,experimenta
             m = estimate_SIM_pattern_parameters.calculate_modulation_factor(rolled_one_channel_SIM_data,
                                                                             estimated_spatial_frequency,
                                                                             estimated_phase_rolled)
-        m = 1
+        # m = 1
         estimated_SIM_pattern_parameters[i, :] = torch.tensor(
             [*estimated_spatial_frequency, m, torch.tensor(estimated_phase),torch.tensor(I0)])
         if experimental_parameters.upsample == True:
