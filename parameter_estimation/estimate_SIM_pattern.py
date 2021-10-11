@@ -121,15 +121,21 @@ def estimate_SIM_pattern_and_parameters_of_multichannels_V1(SIM_data,experimenta
     return estimated_SIM_pattern, estimated_SIM_pattern_parameters, estimated_SIM_pattern_without_m
 
 def estimate_SIM_pattern_and_parameters_of_TIRF_image(input_SIM_data, SIM_data, experimental_parameters):
+    """
+    :param input_SIM_data: input raw SIM for reconstruction
+    :param SIM_data: All 9-frame raw SIM images for calculating polarization
+    :param experimental_parameters: experimental parameters such as: wavelength, pixel size, etc.
+    :return: estimated_SIM_pattern
+    """
     batch_size, channel_num, image_size, _ = SIM_data.shape
     input_channel_num = input_SIM_data.size()[1]
-    estimated_SIM_pattern_parameters = torch.zeros(6, 4)
+    estimated_SIM_pattern_parameters = torch.zeros(input_channel_num, 4)
     xx, yy, _, _ = experimental_parameters.GridGenerate(grid_mode='pixel',
                                                         up_sample=experimental_parameters.upsample)
 
     if experimental_parameters.upsample == True:
         SR_image_size = experimental_parameters.SR_image_size
-        estimated_SIM_pattern = torch.zeros([batch_size, channel_num, SR_image_size, SR_image_size],
+        estimated_SIM_pattern = torch.zeros([batch_size, input_channel_num, SR_image_size, SR_image_size],
                                             device=input_SIM_data.device)
     else:
         estimated_SIM_pattern = torch.zeros_like(input_SIM_data)
@@ -142,13 +148,17 @@ def estimate_SIM_pattern_and_parameters_of_TIRF_image(input_SIM_data, SIM_data, 
         for i in range(3):
             wide_field_image[i, :, :] = torch.mean(SIM_data[:, i * 2:(i + 1) * 2, :, :].squeeze(), dim=0)
 
-    for i in range(6):
+    estimated_spatial_frequency_direction = torch.tensor([[-142.656,-152.367],[201.833,-51.678],[-58.567,200.1]]) # The PSIM parameters
+    estimated_phase_direction = torch.tensor([1.523,1.523+ 2*math.pi/3,-2.033,-2.033 + 2*math.pi/3,2.404 ,2.404+ 2*math.pi/3]) #
+    for i in range(input_channel_num):
         one_channel_SIM_data = input_SIM_data[:, i, :, :].squeeze()
-        direction_num = i // 2
+        direction_num = i // (input_channel_num//3)
         wide_field_image_direction = wide_field_image[direction_num, :, :]
         estimated_spatial_frequency = estimate_spatial_frequency_pre_filtered_cross_correlation(wide_field_image_direction, one_channel_SIM_data)
-        estimated_phase = estimate_SIM_pattern_parameters.calculate_phase(one_channel_SIM_data, estimated_spatial_frequency)
+        # estimated_spatial_frequency = estimated_spatial_frequency_direction[direction_num, :]
 
+        estimated_phase = estimate_SIM_pattern_parameters.calculate_phase(one_channel_SIM_data, estimated_spatial_frequency)
+        # estimated_phase = estimated_phase_direction[i]
         if abs(math.sin(estimated_phase)) > 0.1:  #
             m = estimate_SIM_pattern_parameters.calculate_modulation_factor(one_channel_SIM_data,
                                                                             estimated_spatial_frequency,
@@ -160,7 +170,11 @@ def estimate_SIM_pattern_and_parameters_of_TIRF_image(input_SIM_data, SIM_data, 
             m = estimate_SIM_pattern_parameters.calculate_modulation_factor(rolled_one_channel_SIM_data,
                                                                             estimated_spatial_frequency,
                                                                             estimated_phase_rolled)
-        # m = 1
+
+        if np.isnan(m):
+            m = 1
+        elif m <0.1:
+            m = 1
         estimated_SIM_pattern_parameters[i, :] = torch.tensor(
             [*estimated_spatial_frequency, m, torch.tensor(estimated_phase)])
         if experimental_parameters.upsample == True:
@@ -203,57 +217,37 @@ def estimate_spatial_frequency_pre_filtered_cross_correlation(wide_field_image_d
         with torch.no_grad():
             train_loss = loss.float()
 
-        print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
+        # print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
 
     SIM_first_order = SIM_data - alpha.detach() * wide_field_image_direction
     cross_correlation_image = high_pass_filter(winier_filter(wide_field_image_direction)) * winier_filter(SIM_first_order)
-    fft_numpy_wide_field = fftshift(fft2(high_pass_filter(winier_filter(wide_field_image_direction)).numpy(), axes=(0, 1)), axes=(0, 1))
-    fft_SIM_first_order = fftshift(fft2(winier_filter(SIM_first_order).numpy(), axes=(0, 1)), axes=(0, 1))
 
-    image = cross_correlation_image.squeeze()
-    image_size = image.size()[0]
-    experimental_parameters = SinusoidalPattern(probability = 1,image_size = image_size)
+    # complex_cross_correlation_by_fft函数 局部高分辨频谱寻峰，貌似精度不够
+    # pixel_frequency = complex_cross_correlation_by_fft(SIM_data*SIM_data.numpy(), 1)
+    # pixel_frequency = complex_cross_correlation_by_fft(winier_filter(SIM_first_order).numpy(),
+    #                                                    high_pass_filter(winier_filter(wide_field_image_direction)).numpy())
+    CC_spatial = winier_filter(SIM_first_order).numpy() * high_pass_filter(winier_filter(wide_field_image_direction)).numpy()
+    # CC_spatial = high_pass_filter(SIM_data * SIM_data)
+    CC_spatial_size = CC_spatial.shape
+    x = torch.linspace(1,CC_spatial_size[0],CC_spatial_size[0])
+    fx,_ = torch.meshgrid(x,x)
+    CC = fftshift(fft2(CC_spatial))
+    mask_right_half = torch.where(fx >= CC_spatial_size[0]//2, torch.Tensor([1]), torch.Tensor([0])).numpy()
+    filtered_CC = CC * mask_right_half
+    peak_position_pixel = np.unravel_index(np.argmax(abs(filtered_CC)), filtered_CC.shape)
+    x0 = torch.tensor(peak_position_pixel)
 
-    image_np = image.detach().numpy()
-    fft_numpy_image = fftshift(fft2(image_np, axes=(0, 1)), axes=(0, 1))
-    abs_fft_np_image = np.log(1+abs(fft_numpy_image))
+    max_iteritive = 400
+    peak_subpixel_location,estimated_modulation_facotr = estimate_SIM_pattern_parameters.maxmize_shift_peak_intesity(CC_spatial, peak_position_pixel, max_iteritive)
+    frequency_peak = x0 + peak_subpixel_location
 
-    if image_size % 2 == 0:
-        padding_size = int(image_size / 2)
-        fft_SIM_first_order_pad = np.pad(fft_SIM_first_order,
-               ((padding_size, padding_size), (padding_size, padding_size)))
-    else:
-        padding_size = int(image_size / 2)
-        fft_SIM_first_order_pad = np.pad(fft_SIM_first_order,
-               ((padding_size, padding_size + 1), (padding_size, padding_size + 1)))
+    center_position = [math.ceil(CC_spatial_size[0] // 2),math.ceil(CC_spatial_size[1] // 2)]
+    pixel_frequency = frequency_peak - torch.tensor(center_position)
 
+    if type(pixel_frequency) is np.ndarray:
+        pixel_frequency = torch.from_numpy(pixel_frequency)
 
-    # pixel_frequency = complex_cross_correlation_by_fft(high_pass_filter(SIM_data).numpy(), 1)
-    pixel_frequency = complex_cross_correlation_by_fft(winier_filter(SIM_first_order).numpy(),
-                                                       high_pass_filter(winier_filter(wide_field_image_direction)).numpy())
-    # match_array = complex_cross_correlation(fft_SIM_first_order_pad, fft_numpy_wide_field)
-    #
-    # match_array_size = match_array.shape
-    # x = torch.linspace(1,match_array_size[0],match_array_size[0])
-    # fx,_ = torch.meshgrid(x,x)
-    # mask_right_half = torch.where(fx >= match_array_size[0]//2, torch.Tensor([1]), torch.Tensor([0])).numpy()
-    # filtered_match_array = match_array * mask_right_half
-    # match_array_spatial = ifft2(ifftshift(match_array, axes=(0, 1)), axes=(0, 1))
-    #
-    #
-    # peak_position_pixel = np.unravel_index(np.argmax(filtered_match_array), filtered_match_array.shape)
-    # x0 = torch.tensor(peak_position_pixel)
-    #
-    # max_iteritive = 400
-    # #TODO:怀疑这里的pattern估计有问题，明明系数已经很接近了，但重构结果还是很差，查查原因
-    # peak_subpixel_location,estimated_modulation_facotr = estimate_SIM_pattern_parameters.maxmize_shift_peak_intesity(match_array_spatial, peak_position_pixel, max_iteritive)
-    # frequency_peak = x0 + peak_subpixel_location
-    #
-    # center_position = [math.ceil(match_array_size[0] // 2),math.ceil(match_array_size[1] // 2)]
-    # pixel_frequency = frequency_peak - torch.tensor(center_position)
-
-
-    return torch.from_numpy(pixel_frequency)
+    return pixel_frequency
 
 def fine_adjust_SIM_pattern(input_SIM_raw_data, intial_estimated_pattern_params, modulation_factor, xx, yy):
     Tanh = nn.Tanh()
@@ -355,7 +349,9 @@ def complex_cross_correlation_by_fft(SIM_image_1st,SIM_image_0th):
     CC[x_size - np.int(np.fix(x_size / 2)): x_size + 1 + np.int(np.fix((x_size - 1) / 2)), y_size - np.int(np.fix(y_size / 2)): y_size + 1 + np.int(np.fix((y_size - 1) / 2))] = SIM_image_1st * SIM_image_0th
 
     # Compute crosscorrelation and locate the peak
+    CC = high_pass_filter(torch.from_numpy(CC))
     CC = fftshift(fft2(CC)) # Calculate cross - correlation
+
     CC_peak_loc = np.unravel_index(np.argmax(np.abs(CC)), CC.shape)
 
     # Obtain shift in original pixel grid from the position of the
@@ -377,33 +373,17 @@ def complex_cross_correlation_by_fft(SIM_image_1st,SIM_image_0th):
 
 def subpixel_register(SIM_image_1st,SIM_image_0th,row_shift,col_shift,usfac=100):
     x_size, y_size = SIM_image_1st.shape
-    dft_center = np.int( np.fix(np.ceil(usfac * x_size) / 2) ) - 1  # Center of output array at dftshift + 1
-    peak_loc_row = row_shift * usfac + dft_center
-    peak_loc_col = col_shift * usfac + dft_center
 
-    # row_shift = np.int(np.round(row_shift * usfac) / usfac )
-    # col_shift = np.int(np.round(col_shift * usfac) / usfac)
-    dftshift = np.int(np.fix(np.ceil(usfac * 1.5) / 2))
-    # CC = np.conj(dftups(SIM_image_1st * np.conj(SIM_image_0th), usfac, dftshift-row_shift*usfac, dftshift-col_shift*usfac))
-
-    if peak_loc_row > dft_center:
-        peak_loc_row = peak_loc_row - (dft_center+1)
-    else:
-        peak_loc_row += peak_loc_row + (dft_center+1)
-
-    if peak_loc_col > dft_center:
-        peak_loc_col = peak_loc_col - (dft_center+1)
-    else:
-        peak_loc_col = peak_loc_col + (dft_center+1)
-
+    row_shift_upsample = row_shift * usfac
+    col_shift_upsample = col_shift * usfac
     # Matrix multiply  DFT around the  current  shift  estimate
-    CC = np.conj(dftups(SIM_image_1st * np.conj(SIM_image_0th), usfac, peak_loc_row, peak_loc_col ))
+    CC = np.conj(dftups(SIM_image_1st * np.conj(SIM_image_0th), usfac, row_shift_upsample, col_shift_upsample ))
     # Locate maximum and map back to original  pixel  grid
     rloc, cloc = np.unravel_index(np.argmax(np.abs(CC)), CC.shape)
-    rloc = rloc - dftshift + 1
-    cloc = cloc - dftshift + 1
-    row_shift_result = row_shift + rloc / usfac
-    col_shift_result = col_shift + cloc / usfac
+    rloc = rloc - np.floor((x_size-1)/2)
+    cloc = cloc - np.floor((y_size-1)/2)
+    row_shift_result = row_shift - rloc / usfac
+    col_shift_result = col_shift - cloc / usfac
 
     return row_shift_result, col_shift_result
 
@@ -418,28 +398,26 @@ def dftups(CC_in_spatial,usfac=100,roff=0,coff=0):
     :return:
     """
     nr, nc = CC_in_spatial.shape
-    nor = np.int(np.ceil(usfac * 1.5))
-    noc = np.int(np.ceil(usfac * 1.5))
     # Compute kernels and obtain DFT by matrix products
-    kernc = np.exp((-1j * 2 * math.pi ) * np.matmul(np.linspace(0,nc-1,nc).reshape(nc,1), ( np.linspace(0,noc-1,noc)- np.floor((noc-1)/2) - coff ).reshape(1,noc)/ (nc * usfac) ) )
-    kernr = np.exp((-1j * 2 * math.pi ) * np.matmul( (np.linspace(0,nor-1,nor).reshape(nor,1) - np.floor((nor-1)/2) - roff)/ (nr * usfac), np.linspace(0,nr-1,nr).reshape(1,nr) ) )
+    # kernc = np.exp((-1j * 2 * math.pi / (nc * usfac)) * np.matmul(np.linspace(0,nc-1,nc).reshape(nc,1), ( np.linspace(0,nc-1,noc) - np.floor((nc - 1) / 2) - coff ).reshape(1,noc) ) )
+    # kernr = np.exp((-1j * 2 * math.pi / (nr * usfac)) * np.matmul( (np.linspace(0,nor-1,nor).reshape(nor,1) -  roff), np.linspace(0,nr-1,nr).reshape(1,nr) ) )
     # kernc = np.exp((-1j * 2 * math.pi / (nc * usfac)) * np.matmul(ifftshift(np.linspace(0, nc - 1, nc).reshape(nc, 1))- np.floor((nc-1)/2),
     #                                                               (np.linspace(0, noc - 1, noc) - coff).reshape(1,noc)))
     # kernr = np.exp((-1j * 2 * math.pi / (nr * usfac)) * np.matmul((np.linspace(0, nor - 1, nor).reshape(nor, 1) - roff),
     #                                                               ifftshift(np.linspace(0, nr - 1, nr)).reshape(1, nr)- np.floor((nr-1)/2)))
 
-    # kernc = np.exp((-1j * 2 * math.pi / (nc)) * np.matmul(np.linspace(0, nc - 1, nc).reshape(nc, 1), (
-    #             np.linspace(0, nc - 1, nc) - np.floor((nc - 1) / 2) - 50).reshape(1, nc)))
-    # kernr = np.exp((-1j * 2 * math.pi / (nr )) * np.matmul(
-    #     (np.linspace(0, nr - 1, nr).reshape(nr, 1) - np.floor((nr - 1) / 2) - 50),
-    #     np.linspace(0, nr - 1, nr).reshape(1, nr)))
+    kernc = np.exp((-1j * 2 * math.pi / (nc * usfac )) * np.matmul(np.linspace(0, nc - 1, nc).reshape(nc, 1), (
+                np.linspace(0, nc - 1, nc) - np.floor((nc - 1) / 2) - coff ).reshape(1, nc)))
+    kernr = np.exp((-1j * 2 * math.pi / ( nr * usfac) * np.matmul(
+        (np.linspace(0, nr - 1, nr).reshape(nr, 1) - np.floor((nr - 1) / 2) - roff),
+        np.linspace(0, nr - 1, nr).reshape(1, nr))) )
 
     CC = np.matmul( np.matmul(kernr, CC_in_spatial), kernc)
-    # experimental_params = funcs.SinusoidalPattern(probability=1, image_size=nr)
-    # OTF = experimental_params.OTF_form(fc_ratio=2)
-    # psf = np.abs(fftshift(ifft2(ifftshift(OTF))))
-    # OTF_subpixel = np.matmul( np.matmul(kernr, psf), kernc)
-    # CC /= np.abs(OTF_subpixel)
+    experimental_params = funcs.SinusoidalPattern(probability=1, image_size=nr)
+    OTF = experimental_params.OTF_form(fc_ratio=2)
+    psf = np.abs(fftshift(ifft2(ifftshift(OTF))))
+    OTF_subpixel = np.matmul( np.matmul(kernr, psf), kernc)
+    CC /= np.abs(OTF_subpixel)
     return CC
 
 
