@@ -9,7 +9,7 @@ import torch.optim as optim
 import torch.nn as nn
 
 
-def calculate_polarization_ratio(SIM_raw_data, experimental_parameters):
+def calculate_polarization_ratio(SIM_raw_data, experimental_parameters,deconv = True):
     if SIM_raw_data.size()[1]==9:
         SIM_data_three_direction = torch.stack(
             [SIM_raw_data[:, 0, :, :], SIM_raw_data[:, 3, :, :], SIM_raw_data[:, 6, :, :]], dim=1)
@@ -45,37 +45,56 @@ def calculate_polarization_ratio(SIM_raw_data, experimental_parameters):
     wide_field_np = abs(np.fft.ifft2(np.fft.ifftshift(fft_wide_field_np)))
     wide_field = torch.from_numpy(wide_field_np)
 
+    wide_field = torch.mean(SIM_raw_data[:, :, :, :], dim=1)
+
     OTF = experimental_parameters.OTF
-    wide_field_deconv = forward_model.winier_deconvolution(wide_field,OTF)
+    wide_field_deconv = forward_model.wiener_deconvolution(wide_field, OTF)
     # wide_field_deconv += 1e-3 #add a small number to avoid divide zero
-    wide_field_1_deconv = forward_model.winier_deconvolution(wide_field_1,OTF)
-    wide_field_2_deconv = forward_model.winier_deconvolution(wide_field_2, OTF)
-    wide_field_3_deconv = forward_model.winier_deconvolution(wide_field_3, OTF)
+    wide_field_1_deconv = forward_model.wiener_deconvolution(wide_field_1, OTF)
+    wide_field_2_deconv = forward_model.wiener_deconvolution(wide_field_2, OTF)
+    wide_field_3_deconv = forward_model.wiener_deconvolution(wide_field_3, OTF)
     if wide_field_np.min() < 1e-6:
         wide_field_np += 1e-6
     if SIM_raw_data.size()[1] == 9:
-        polarization_raio = torch.stack([wide_field_1 / wide_field, wide_field_1 / wide_field, wide_field_1 / wide_field, \
-                                         wide_field_2 / wide_field, wide_field_2 / wide_field, wide_field_2 / wide_field, \
-                                         wide_field_3 / wide_field, wide_field_3 / wide_field, wide_field_3 / wide_field],
-                                        dim=0)
-        # polarization_raio = torch.stack([wide_field_1_deconv / (wide_field_deconv**2+1e-6), wide_field_1_deconv / (wide_field_deconv**2+1e-6), wide_field_1_deconv / (wide_field_deconv**2+1e-6), \
-        #                                  wide_field_2_deconv / (wide_field_deconv**2+1e-6), wide_field_2_deconv / (wide_field_deconv**2+1e-6), wide_field_2_deconv / (wide_field_deconv**2+1e-6), \
-        #                                  wide_field_3_deconv / (wide_field_deconv**2+1e-6), wide_field_3_deconv / (wide_field_deconv**2+1e-6), wide_field_3_deconv / (wide_field_deconv**2+1e-6)],
-        #                                 dim=0)
-        # polarization_raio = torch.stack([wide_field_1_deconv / (wide_field_deconv), wide_field_1_deconv / (wide_field_deconv), wide_field_1_deconv / (wide_field_deconv), \
-        #                                  wide_field_2_deconv / (wide_field_deconv), wide_field_2_deconv / (wide_field_deconv), wide_field_2_deconv / (wide_field_deconv), \
-        #                                  wide_field_3_deconv / (wide_field_deconv), wide_field_3_deconv / (wide_field_deconv), wide_field_3_deconv / (wide_field_deconv)],
-        #                                 dim=0)
-        index = polarization_raio > polarization_raio.mean() * 10
+
+        if deconv:
+            polarization_raio = torch.stack(
+                [wide_field_1_deconv / (wide_field_deconv), wide_field_1_deconv / (wide_field_deconv),
+                 wide_field_1_deconv / (wide_field_deconv), \
+                 wide_field_2_deconv / (wide_field_deconv), wide_field_2_deconv / (wide_field_deconv),
+                 wide_field_2_deconv / (wide_field_deconv), \
+                 wide_field_3_deconv / (wide_field_deconv), wide_field_3_deconv / (wide_field_deconv),
+                 wide_field_3_deconv / (wide_field_deconv)],
+                dim=0)
+            # polarization_raio = torch.stack(
+            #     [wide_field_1_deconv / (wide_field_deconv), wide_field_1_deconv / (wide_field_deconv),
+            #      wide_field_1_deconv / (wide_field_deconv), \
+            #      wide_field_2_deconv / (wide_field_deconv), wide_field_2_deconv / (wide_field_deconv),
+            #      wide_field_2_deconv / (wide_field_deconv), \
+            #      wide_field_3_deconv / (wide_field_deconv), wide_field_3_deconv / (wide_field_deconv),
+            #      wide_field_3_deconv / (wide_field_deconv)],
+            #     dim=0)
+
+            # polarization_raio = torch.stack([wide_field_1_deconv / (wide_field_deconv**2+1e-6), wide_field_1_deconv / (wide_field_deconv**2+1e-6), wide_field_1_deconv / (wide_field_deconv**2+1e-6), \
+            #                                  wide_field_2_deconv / (wide_field_deconv**2+1e-6), wide_field_2_deconv / (wide_field_deconv**2+1e-6), wide_field_2_deconv / (wide_field_deconv**2+1e-6), \
+            #                                  wide_field_3_deconv / (wide_field_deconv**2+1e-6), wide_field_3_deconv / (wide_field_deconv**2+1e-6), wide_field_3_deconv / (wide_field_deconv**2+1e-6)],
+            #                                 dim=0)
+        else:
+            polarization_raio = torch.stack([wide_field_1 / wide_field, wide_field_1 / wide_field, wide_field_1 / wide_field, \
+                                             wide_field_2 / wide_field, wide_field_2 / wide_field, wide_field_2 / wide_field, \
+                                             wide_field_3 / wide_field, wide_field_3 / wide_field, wide_field_3 / wide_field],
+                                            dim=0)
+
+        index = polarization_raio > polarization_raio.mean() * 3
         polarization_raio[index]=1
     elif SIM_raw_data.size()[1] == 6:
-        # polarization_raio = torch.stack([wide_field_1 / wide_field, wide_field_1 / wide_field, \
-        #                                  wide_field_2 / wide_field, wide_field_2 / wide_field,  \
-        #                                  wide_field_3 / wide_field, wide_field_3 / wide_field],
-        #                                 dim=0)
-        polarization_raio = torch.stack([wide_field_1_deconv / wide_field_deconv, wide_field_1_deconv / wide_field_deconv, \
-                                         wide_field_2_deconv / wide_field_deconv, wide_field_2_deconv / wide_field_deconv, \
-                                         wide_field_3_deconv / wide_field_deconv, wide_field_3_deconv / wide_field_deconv],dim=0)
+        polarization_raio = torch.stack([wide_field_1 / wide_field, wide_field_1 / wide_field, \
+                                         wide_field_2 / wide_field, wide_field_2 / wide_field,  \
+                                         wide_field_3 / wide_field, wide_field_3 / wide_field],
+                                        dim=0)
+        # polarization_raio = torch.stack([wide_field_1_deconv / wide_field_deconv, wide_field_1_deconv / wide_field_deconv, \
+        #                                  wide_field_2_deconv / wide_field_deconv, wide_field_2_deconv / wide_field_deconv, \
+        #                                  wide_field_3_deconv / wide_field_deconv, wide_field_3_deconv / wide_field_deconv],dim=0)
     return polarization_raio.unsqueeze(0)
 
 
@@ -86,7 +105,7 @@ def calculate_polarization_direction(SIM_raw_data, experimental_parameters):
         _, estimated_pattern_parameters, _ = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
             SIM_data_three_direction, experimental_parameters)
         # print(estimated_pattern_parameters)
-        theta = torch.atan2(estimated_pattern_parameters[:, 1], estimated_pattern_parameters[:, 0])
+        theta = torch.atan2(estimated_pattern_parameters[:, 0], estimated_pattern_parameters[:, 1])
         wide_field_1 = torch.mean(SIM_raw_data[0, 0:3, :, :], dim=0)
         wide_field_2 = torch.mean(SIM_raw_data[0, 3:6, :, :], dim=0)
         wide_field_3 = torch.mean(SIM_raw_data[0, 6:9, :, :], dim=0)
@@ -96,14 +115,14 @@ def calculate_polarization_direction(SIM_raw_data, experimental_parameters):
         _, estimated_pattern_parameters, _ = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
             SIM_data_three_direction, experimental_parameters)
         # print(estimated_pattern_parameters)
-        theta = torch.atan2(estimated_pattern_parameters[:, 1], estimated_pattern_parameters[:, 0])
+        theta = torch.atan2(estimated_pattern_parameters[:, 0], estimated_pattern_parameters[:, 1])
         wide_field_1 = torch.mean(SIM_raw_data[0, 0:2, :, :], dim=0)
         wide_field_2 = torch.mean(SIM_raw_data[0, 2:4, :, :], dim=0)
         wide_field_3 = torch.mean(SIM_raw_data[0, 4:6, :, :], dim=0)
 
-    wide_field_1_deconv = forward_model.winier_deconvolution(wide_field_1, experimental_parameters.OTF)
-    wide_field_2_deconv = forward_model.winier_deconvolution(wide_field_2, experimental_parameters.OTF)
-    wide_field_3_deconv = forward_model.winier_deconvolution(wide_field_3, experimental_parameters.OTF)
+    wide_field_1_deconv = forward_model.wiener_deconvolution(wide_field_1, experimental_parameters.OTF)
+    wide_field_2_deconv = forward_model.wiener_deconvolution(wide_field_2, experimental_parameters.OTF)
+    wide_field_3_deconv = forward_model.wiener_deconvolution(wide_field_3, experimental_parameters.OTF)
     wide_field_1_deconv, wide_field_2_deconv, wide_field_3_deconv = wide_field_1_deconv / wide_field_1_deconv.max(), wide_field_2_deconv / wide_field_2_deconv.max(), wide_field_3_deconv / wide_field_3_deconv.max()
     wide_field_np_1, wide_field_np_2, wide_field_np_3 = wide_field_1_deconv.numpy(), wide_field_2_deconv.numpy(), wide_field_3_deconv.numpy()
     wide_field_1, wide_field_2, wide_field_3 = wide_field_1 / wide_field_1.max(), wide_field_2 / wide_field_2.max(), wide_field_3 / wide_field_3.max()
@@ -111,9 +130,12 @@ def calculate_polarization_direction(SIM_raw_data, experimental_parameters):
     fft_wide_field_np_1, fft_wide_field_np_2, fft_wide_field_np_3 = np.fft.fftshift(
         np.fft.fft2(wide_field_np_1)), np.fft.fftshift(np.fft.fft2(wide_field_np_2)), np.fft.fftshift(
         np.fft.fft2(wide_field_np_3))
-    M_matrix = np.array([[1, 1 / 2 * np.exp(1j * 2 * theta[0]), 1 / 2 * np.exp(-2 * 1j * theta[0])],
-                         [1, 1 / 2 * np.exp(2 * 1j * theta[1]), 1 / 2 * np.exp(-2 * 1j * theta[1])],
-                         [1, 1 / 2 * np.exp(2 * 1j * theta[2]), 1 / 2 * np.exp(-2 * 1j * theta[2])]])
+    M_matrix = np.array([[1, -1 / 2 * np.exp(1j * 2 * theta[0]), -1 / 2 * np.exp(-2 * 1j * theta[0])],
+                         [1, -1 / 2 * np.exp(2 * 1j * theta[1]), -1 / 2 * np.exp(-2 * 1j * theta[1])],
+                         [1, -1 / 2 * np.exp(2 * 1j * theta[2]), -1 / 2 * np.exp(-2 * 1j * theta[2])]])
+    # M_matrix = np.array([[1, 1 / 2 * np.exp(1j * 2 * theta[0]), 1 / 2 * np.exp(-2 * 1j * theta[0])],
+    #                      [1, 1 / 2 * np.exp(2 * 1j * theta[1]), 1 / 2 * np.exp(-2 * 1j * theta[1])],
+    #                      [1, 1 / 2 * np.exp(2 * 1j * theta[2]), 1 / 2 * np.exp(-2 * 1j * theta[2])]])
     M_matrix_inv = np.linalg.inv(M_matrix)
 
     polarization_fft = M_matrix_inv[2, 0] * fft_wide_field_np_1 + M_matrix_inv[2, 1] * fft_wide_field_np_2 + \
@@ -123,13 +145,13 @@ def calculate_polarization_direction(SIM_raw_data, experimental_parameters):
     polarization = np.fft.ifft2(np.fft.ifftshift(polarization_fft*OTF_np / (OTF_np*OTF_np+0.04)))
     polarization_angle_np = np.angle(polarization) / 2
     polarization_angle = torch.from_numpy(polarization_angle_np)
-    absorption_efficiency = 1 + 0.4 * torch.cos(2 * (polarization_angle.unsqueeze(2) - theta.reshape([1, 1, 3])))
+    absorption_efficiency = 1 + 0.4 * torch.cos(2 * ( theta.reshape([1, 1, 3])-polarization_angle.unsqueeze(2)))
     polarization_raio = torch.stack(
         [absorption_efficiency[:, :, 0], absorption_efficiency[:, :, 0], absorption_efficiency[:, :, 0],
          absorption_efficiency[:, :, 1], absorption_efficiency[:, :, 1], absorption_efficiency[:, :, 1], \
          absorption_efficiency[:, :, 2], absorption_efficiency[:, :, 2], absorption_efficiency[:, :, 2]],
         dim=0)
-
+    polarization_angle= -polarization_angle
     alpha = polarization_angle % math.pi
     h = alpha / math.pi
     # s = 0.6 * torch.ones_like(h)
@@ -149,7 +171,7 @@ def calculate_polarization_ratio_regression(SIM_raw_data, experimental_parameter
         SIM_data_three_direction, experimental_parameters)
     # print(estimated_pattern_parameters)
     wide_field_direction = torch.zeros_like(SIM_data_three_direction).squeeze()
-    theta = torch.atan2(estimated_pattern_parameters[:, 1], estimated_pattern_parameters[:, 0])
+    theta = torch.atan2(estimated_pattern_parameters[:, 0], estimated_pattern_parameters[:, 1])
     wide_field_direction[0, :, :] = torch.mean(SIM_raw_data[0, 0:3, :, :], dim=0)
     wide_field_direction[1, :, :] = torch.mean(SIM_raw_data[0, 3:6, :, :], dim=0)
     wide_field_direction[2, :, :] = torch.mean(SIM_raw_data[0, 6:9, :, :], dim=0)
@@ -232,12 +254,15 @@ def calculate_polarization_ratio_regression(SIM_raw_data, experimental_parameter
             train_loss = loss.float()
 
         print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
-
+    polarization_raio = abs(polarization_raio.detach())
+    # index = polarization_raio > polarization_raio.mean() * 3
+    # polarization_raio[index] = 1
     result = torch.stack(
         [polarization_raio[0, :, :], polarization_raio[0, :, :], polarization_raio[0, :, :],
          polarization_raio[1, :, :], polarization_raio[1, :, :], polarization_raio[1, :, :],
          polarization_raio[2, :, :], polarization_raio[2, :, :], polarization_raio[2, :, :]], 0)
-    return result.detach().clip(0.3, 2).unsqueeze(0)
+
+    return result.detach().unsqueeze(0)
 
 
 def HSV2BGR(hsv):

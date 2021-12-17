@@ -18,6 +18,11 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp2d
 
 def calculate_phase(image,pixel_frequency):
+    """
+    :param image: input SIM image
+    :param pixel_frequency:
+    :return: phase of structured illumination
+    """
 
     image = image.squeeze()
     image_size = image.size()[0]
@@ -36,7 +41,7 @@ def calculate_phase(image,pixel_frequency):
 
     return estimated_phase
 
-def calculate_spatial_frequency (image):
+def calculate_spatial_frequency (image, model = 'normal'):
     image = image.squeeze()
     image_size = image.size()[0]
     experimental_parameters = SinusoidalPattern(probability = 1,image_size = image_size)
@@ -69,7 +74,6 @@ def calculate_spatial_frequency (image):
     pixel_frequency = frequency_peak - torch.tensor(center_position)
 
     return pixel_frequency,estimated_modulation_facotr,I0
-
 
 def shift_freq_domain_peak_intensity(subpixel_shift,image_np,peak_position_pixel):
     image_size = image_np.shape[0]
@@ -174,7 +178,31 @@ def calculate_modulation_factor(one_channel_SIM_data,estimated_spatial_frequency
     m = m_S0_Sinphase_Hk / S0 / Hk / math.sin(estimated_phase)
 
     return m
+def calculate_modulation_factor_V1(one_channel_SIM_data,estimated_spatial_frequency,estimated_phase):
+    image_np = one_channel_SIM_data.detach().numpy()
+    image_size = image_np.shape[0]
+    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size)
+    xx, yy, _, _ = experimental_parameters.GridGenerate(False, grid_mode='pixel')
+    image_np_times_phase_gradient = image_np * np.exp(-1j * 2 * math.pi * (estimated_spatial_frequency[0]/image_size * xx + estimated_spatial_frequency[1]/image_size * yy).numpy())
+    translated_fft_image_np = fftshift(fft2(image_np_times_phase_gradient, axes=(0, 1)), axes=(0, 1))
 
+    fft_image_np = fftshift(fft2(image_np, axes=(0, 1)), axes=(0, 1))
+    x0 = int(image_size/2)
+    y0 = int(image_size / 2)
+    Dk = translated_fft_image_np[x0,y0]
+    D0 = fft_image_np[x0,y0]
+    S0 = abs(D0)
+    m_S0_Hk= abs(Dk) * 2
+
+    # plt.imshow(np.log(abs(translated_fft_image_np)+1))
+
+    f0 = experimental_parameters.f_cutoff
+    delta_fx = experimental_parameters.delta_fx
+    f = torch.norm(estimated_spatial_frequency) * delta_fx
+    Hk = (2 / math.pi) * (torch.acos(f / f0) - (f / f0) * (pow((1 - (f / f0) ** 2), 0.5)))
+    m = m_S0_Hk / S0 / Hk
+
+    return m
 
 if __name__ == '__main__':
     # print('hello')
