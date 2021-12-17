@@ -276,7 +276,7 @@ def save_image_tensor2pillow(input_tensor: torch.Tensor, file_name):
             print("Insufficient rights to read or write output directory (%s)"
                   % file_name)
 
-    save_path = os.path.join(file_name, time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + '_SR_image.png')
+    save_path = os.path.join(file_name, time.strftime("%Y-%m-%d %H-%M-%S", time.localtime()) + '_SR_image.png')
 
     a = input_tensor.type(torch.uint8).numpy()
     # 转成pillow

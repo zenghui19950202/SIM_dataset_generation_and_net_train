@@ -36,7 +36,7 @@ ax.spines['left'].set_position(('data', 0))
 # ax.spines['right'].set_position(('data', distance[-2]))
 # plt.xticks(distance[1:])
 plt.legend()
-plt.savefig(csv_directory + 'resolution_plot.eps', dpi=600,format='eps')
+plt.savefig(csv_directory + 'resolution_plot.eps', dpi=300,format='eps')
 # plt.yticks(distance[1:])
 plt.show()
 

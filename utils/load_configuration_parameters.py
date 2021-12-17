@@ -27,12 +27,17 @@ def load_train_net_config_paras():
     train_net_parameters['image_size'] = config.getint('SIM_data_generation', 'image_size')
     train_net_parameters['opt_over'] = config.get('net', 'opt_over')
 
+    train_net_parameters['data_directory_file'] = config.get('image_file', 'SourceFileDirectory')
+
 
     return train_net_parameters
 
-def load_data_generation_config_paras():
+def load_data_generation_config_paras(config_params_directory = None):
     config = ConfigParser()
-    config.read('../configuration.ini')
+    if config_params_directory == None:
+        config.read('../configuration.ini')
+    else:
+        config.read(config_params_directory)
     data_generation_parameters={}
     data_generation_parameters['SourceFileDirectory'] = config.get('image_file', 'SourceFileDirectory')
     data_generation_parameters['save_file_directory'] = config.get('image_file', 'save_file_directory')
