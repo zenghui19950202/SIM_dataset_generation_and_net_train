@@ -7,7 +7,8 @@ from utils import common_utils
 from self_supervised_learning_sr import forward_model
 import torch.optim as optim
 import torch.nn as nn
-
+from simulation_data_generation import SRimage_metrics
+import os
 
 def calculate_polarization_ratio(SIM_raw_data, experimental_parameters,deconv = True):
     if SIM_raw_data.size()[1]==9:
@@ -46,6 +47,8 @@ def calculate_polarization_ratio(SIM_raw_data, experimental_parameters,deconv = 
     wide_field = torch.from_numpy(wide_field_np)
 
     wide_field = torch.mean(SIM_raw_data[:, :, :, :], dim=1)
+
+    wide_field[torch.where(wide_field == 0)] = 1e-3
 
     OTF = experimental_parameters.OTF
     wide_field_deconv = forward_model.wiener_deconvolution(wide_field, OTF)
@@ -263,6 +266,59 @@ def calculate_polarization_ratio_regression(SIM_raw_data, experimental_parameter
          polarization_raio[2, :, :], polarization_raio[2, :, :], polarization_raio[2, :, :]], 0)
 
     return result.detach().unsqueeze(0)
+
+def calculate_polar_approximation(polarization_ratio_direct,polarization_ratio_angle_estimated,experimental_params,save_file_directory):
+    # polarization_ratio 是直接除法近似得到， polarization_ratio_estimated是先计算偏振角再计算得到
+    polarization_ratio_load = torch.zeros_like(polarization_ratio_direct)
+    SSIM_angle,PSNR_angle,mse_loss_angle  = 0,0,0
+    SSIM_direct,PSNR_direct,mse_loss_direct  = 0,0,0
+    SSIM_direct_and_angle,PSNR_direct_and_angle =0,0
+    mse = nn.MSELoss()
+    file_name = save_file_directory + '/SIMdata_SR_train/0absorption_efficiency.pt'
+    for i in range(9):
+        polar_estimated_direct = polarization_ratio_direct[0, i, :, :]
+        polar_estimated_angle = polarization_ratio_angle_estimated[0, i, :, :]
+        polar_estimated_angle /= polar_estimated_angle.max()
+
+        polar_estimated_direct /= polar_estimated_direct.max()
+
+        polar_estimated_angle_np = polar_estimated_angle.cpu().squeeze().detach().numpy() * 255
+        polar_estimated_direct_np = polar_estimated_direct.cpu().squeeze().detach().numpy() * 255
+
+        if os.path.exists(file_name):
+            polarization_ratio_load[0, i, :, :] = torch.load(
+                save_file_directory + '/SIMdata_SR_train/' + str(i) + 'absorption_efficiency.pt')
+
+            polar_GT = experimental_params.OTF_Filter(polarization_ratio_load[0, i, :, :], experimental_params.OTF)
+            polar_GT = polar_GT / polar_GT.max()
+            polar_GT_np = polar_GT.cpu().squeeze().detach().numpy() * 255
+
+
+            SSIM_direct += SRimage_metrics.calculate_ssim(polar_estimated_direct_np, polar_GT_np)
+            PSNR_direct += SRimage_metrics.calculate_psnr_np(polar_estimated_direct_np, polar_GT_np)
+            mse_loss_direct+=mse(polar_GT, polar_estimated_direct)
+
+            SSIM_angle += SRimage_metrics.calculate_ssim(polar_estimated_angle_np, polar_GT_np)
+            PSNR_angle += SRimage_metrics.calculate_psnr_np(polar_estimated_angle_np, polar_GT_np)
+            mse_loss_angle += mse(polar_GT, polar_estimated_angle)
+    # polarization_ratio = polarization_ratio_load
+
+        else:
+            SSIM_direct_and_angle+= SRimage_metrics.calculate_ssim(polar_estimated_direct_np, polar_estimated_angle_np)
+            PSNR_direct_and_angle += SRimage_metrics.calculate_psnr_np(polar_estimated_direct_np, polar_estimated_angle_np)
+    if os.path.exists(file_name):
+        SSIM_direct /= 9
+        PSNR_direct /= 9
+        mse_loss_direct /= 9
+        SSIM_angle /= 9
+        PSNR_angle /= 9
+        mse_loss_angle /= 9
+        print(' polarization_ratio: SSIM_direct:%f, PSNR_direct:%f ' % (SSIM_direct, PSNR_direct))
+        print(' polarization_ratio: SSIM_angle:%f, PSNR_angle:%f ' % (SSIM_angle, PSNR_angle))
+    else:
+        SSIM_direct_and_angle/= 9
+        PSNR_direct_and_angle/=9
+        print(' No GT data, polarization_ratio: SSIM_direct_and_angle:%f, PSNR_direct_and_angle:%f ' % (SSIM_direct_and_angle, PSNR_direct_and_angle))
 
 
 def HSV2BGR(hsv):

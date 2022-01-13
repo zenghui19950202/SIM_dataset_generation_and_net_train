@@ -89,7 +89,7 @@ def notch_filter(SR_image, estimated_pattern_parameters):
             fx_shift = fx - j * spatial_freq_mean[0]
             fy_shift = fy - j * spatial_freq_mean[1]
             fr_square = (fx_shift ** 2 + fy_shift ** 2)
-            f0 = image_size[0]/256 * 2
+            f0 = image_size[0]/256
             notch_filter += torch.exp(-1 * fr_square / (4 * f0 *f0)).to(device)
 
     fft_image_np_filtered = fft_image_np * (1- notch_filter.detach().cpu().numpy())
@@ -138,7 +138,7 @@ def notch_filter_generate(SR_image, estimated_pattern_parameters,notch_radius = 
 
     return notch_filter
 
-def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters,experimental_parameters,filter_radius = 5):
+def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters,experimental_parameters,filter_radius = 5,attenuate_factor = 2):
     device = SR_image.device
     SR_image = SR_image.squeeze()
     image_size = SR_image.size()
@@ -150,7 +150,7 @@ def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters
     spatial_freq_all = torch.zeros([6,2])
 
     CTF = experimental_parameters.CTF_form(fc_ratio=1.8,upsample=upsample_flag).unsqueeze(2).to(device)
-    apodization_function = experimental_parameters.apodization_function_generator(fc_ratio=1.8,upsample=upsample_flag).unsqueeze(2).to(device)
+    # apodization_function = experimental_parameters.apodization_function_generator(fc_ratio=1.8,upsample=upsample_flag).unsqueeze(2).to(device)
 
     notch_filter = torch.zeros_like(SR_image)
     device = SR_image.device
@@ -165,6 +165,8 @@ def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters
             spatial_freq_x_positive[i,:] = spatial_freq[i, :]
         elif input_num == 6:
             spatial_freq_x_positive[i,:] = torch.mean(spatial_freq[0 + 2 * i:2 + 2 * i, :], dim=0)
+        elif input_num == 7:
+            spatial_freq_x_positive[i, :] = torch.mean(spatial_freq[1 + 2 * i:3 + 2 * i, :], dim=0)
         else:
             if i == 0:
                 spatial_freq_x_positive[i,:] = spatial_freq[i, :]
@@ -184,7 +186,7 @@ def notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters
                     fx_shift = fx - spatial_freq_combination[0]
                     fy_shift = fy - spatial_freq_combination[1]
                     fr_square = (fx_shift ** 2 + fy_shift ** 2)
-                    f0 = image_size[0] / 256 * 2
+                    f0 = image_size[0] / 256 * attenuate_factor
                     notch_filter += torch.exp(-1 * fr_square / (4 * f0 * f0)).to(device)
                     # notch_filter = torch.where(notch_filter >0.5, torch.tensor([1.0],device=device), torch.tensor([0.0],device=device))
 
@@ -270,6 +272,42 @@ def filter_for_computable_freq(SR_image, estimated_pattern_parameters):
     SR_image_filtered = forward_model.complex_stack_to_intensity(SR_image_filtered_complex)
 
     return SR_image_filtered
+
+def winier_filter(image):
+    image = image.squeeze()
+    image_size = image.size()
+    image_np = image.detach().cpu().numpy()
+    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size[0])
+    fx, fy, _, _ = experimental_parameters.GridGenerate( grid_mode='pixel')
+    OTF = experimental_parameters.OTF.numpy()
+    fft_numpy_image = fftshift(fft2(image_np, axes=(0, 1)), axes=(0, 1))
+    deconv_fft =  fft_numpy_image * (OTF / (OTF * OTF + 0.04))
+
+    image_np_filtered = ifft2(ifftshift(deconv_fft, axes=(0, 1)), axes=(0, 1))
+    image_np_filtered = image_np_filtered/abs(image_np_filtered).max() * 256
+    image_filtered_tensor = torch.from_numpy(image_np_filtered)
+
+    return image_filtered_tensor
+
+def high_pass_filter(image):
+    image = image.squeeze()
+    image_size = image.size()
+    image_np = image.detach().cpu().numpy()
+    experimental_parameters = SinusoidalPattern(probability=1,image_size = image_size[0])
+    fx, fy, _, _ = experimental_parameters.GridGenerate( grid_mode='pixel')
+    OTF = experimental_parameters.OTF.numpy()
+    fft_numpy_image = fftshift(fft2(image_np, axes=(0, 1)), axes=(0, 1))
+
+    fr_square = (fx ** 2 + fy ** 2)
+    f0 = image_size[0] / 256 * 8
+    high_pass_filter = torch.exp(-1 * fr_square / (4 * f0 * f0))
+    high_pass_fft_numpy_image = (1-high_pass_filter) * fft_numpy_image
+    image_np_filtered = ifft2(ifftshift(high_pass_fft_numpy_image, axes=(0, 1)), axes=(0, 1))
+    image_np_filtered = image_np_filtered/image_np_filtered.max() * 256
+    image_filtered_tensor = torch.from_numpy(image_np_filtered)
+
+    return image_filtered_tensor
+
 
 
 

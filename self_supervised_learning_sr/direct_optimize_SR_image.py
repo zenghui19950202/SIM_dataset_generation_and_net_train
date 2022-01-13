@@ -25,7 +25,7 @@ import numpy as np
 def try_gpu():
     """If GPU is available, return torch.device as cuda:0; else return torch.device as cpu."""
     if torch.cuda.is_available():
-        device = torch.device('cuda:3')
+        device = torch.device('cuda:6')
     else:
         device = torch.device('cpu')
     return device
@@ -54,9 +54,9 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     experimental_params = funcs.SinusoidalPattern(probability=1, image_size=image_size[0])
     polarization_ratio = calculate_polarization_ratio(SIM_raw_data, experimental_params)
 
-    input_SIM_raw_data = common_utils.pick_input_data(SIM_raw_data,[0,1,3,4,6,7])
-    input_SIM_pattern = common_utils.pick_input_data(SIM_pattern,[0,1,3,4,6,7])
-    input_polarization_ratio = common_utils.pick_input_data(polarization_ratio,[0,1,3,4,6,7])
+    input_SIM_raw_data = common_utils.input_data_pick(SIM_raw_data,9)
+    input_SIM_pattern = common_utils.input_data_pick(SIM_pattern,9)
+    input_polarization_ratio = common_utils.input_data_pick(polarization_ratio,9)
 
     # input_SIM_raw_data_normalized = processing_utils.pre_processing(input_SIM_raw_data)
 
@@ -72,8 +72,9 @@ def train(net, SIM_data_loader, SIM_pattern_loader, net_input, criterion, num_ep
     else:
         SR_image = copy.deepcopy(wide_field_image)
 
-    temp_input_SIM_pattern, estimated_pattern_parameters, _ = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
-        input_SIM_raw_data,experimental_params)
+    # temp_input_SIM_pattern, estimated_pattern_parameters, _ = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_multichannels_V1(
+    #     input_SIM_raw_data,experimental_params)
+    temp_input_SIM_pattern, estimated_pattern_parameters = estimate_SIM_pattern.estimate_SIM_pattern_and_parameters_of_TIRF_image(input_SIM_raw_data, SIM_raw_data, experimental_params)
 
     if experimental_params.upsample == True:
         OTF = experimental_params.OTF_upsmaple
@@ -184,7 +185,7 @@ if __name__ == '__main__':
 
     random.seed(60)  # 设置随机种子
     # min_loss = 1e5
-    num_epochs = 800
+    num_epochs = 400
 
     random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
     lr = random_params['learning_rate']

@@ -19,6 +19,7 @@ import multiprocessing
 from simulation_data_generation import fuctions_for_generate_pattern as funcs
 from self_supervised_learning_sr import forward_model
 from utils import load_SIM_paras_from_txt
+from utils import common_utils
 
 
 def estimate_SIM_pattern_and_parameters_of_multichannels(SIM_data):
@@ -32,7 +33,7 @@ def estimate_SIM_pattern_and_parameters_of_multichannels(SIM_data):
         estimated_SIM_pattern = torch.zeros_like(SIM_data)
     image_size = experimental_parameters.image_size
     estimated_SIM_pattern_parameters = torch.zeros(input_channel, 5)
-    xx, yy, _, _ = experimental_parameters.GridGenerate(image_size, grid_mode='pixel',
+    xx, yy, _, _ = experimental_parameters.GridGenerate(grid_mode='pixel',
                                                         up_sample=experimental_parameters.upsample)
     for i in range(input_channel):
         one_channel_SIM_data = SIM_data[:, i, :, :].squeeze()
@@ -93,7 +94,7 @@ def estimate_SIM_pattern_and_parameters_of_multichannels_V1(SIM_data, experiment
         one_channel_SIM_data = SIM_data[:, i, :, :].squeeze()
         start_time = time.time()
         estimated_spatial_frequency, estimated_modulation_factor, I0 = estimate_SIM_pattern_parameters.calculate_spatial_frequency(
-            one_channel_SIM_data * one_channel_SIM_data)
+              one_channel_SIM_data)
         end_time = time.time()
         # print('the time spent on calculating the spatial frequency: %f' %(end_time-start_time))
         estimated_phase = estimate_SIM_pattern_parameters.calculate_phase(one_channel_SIM_data,
@@ -169,41 +170,71 @@ def estimate_SIM_pattern_and_parameters_of_TIRF_image(input_SIM_data, SIM_data, 
     elif input_channel_num == 7:
         wide_field_image[0, :, :] = wide_field_image[1, :, :] = wide_field_image[2, :, :] = torch.mean(
             SIM_data[:, 0:3, :, :].squeeze(), dim=0)
-        wide_field_image[3, :, :] = wide_field_image[5, :, :] = torch.mean(SIM_data[:, 3:6, :, :].squeeze(), dim=0)
-        wide_field_image[4, :, :] = wide_field_image[6, :, :] = torch.mean(SIM_data[:, 6:9, :, :].squeeze(), dim=0)
-
+        wide_field_image[3, :, :] = wide_field_image[4, :, :] = torch.mean(SIM_data[:, 3:6, :, :].squeeze(), dim=0)
+        wide_field_image[5, :, :] = wide_field_image[6, :, :] = torch.mean(SIM_data[:, 6:9, :, :].squeeze(), dim=0)
+    elif input_channel_num == 3:
+        real_value_SIM_params = torch.stack(
+            (real_value_SIM_params[0, :], real_value_SIM_params[3, :], real_value_SIM_params[6, :]), 0)
+    "First loop to extract paramters of illumination pattern"
     for i in range(input_channel_num):
         one_channel_SIM_data = input_SIM_data[:, i, :, :].squeeze()
-
         direction_num = i // 2
+
         wide_field_image_direction = wide_field_image[i, :, :]
         estimated_spatial_frequency, m = estimate_spatial_frequency_pre_filtered_cross_correlation(
             wide_field_image_direction, one_channel_SIM_data)
         estimated_phase = estimate_SIM_pattern_parameters.calculate_phase(one_channel_SIM_data,
                                                                           estimated_spatial_frequency)
 
-        # estimated_spatial_frequency,m,estimated_phase = real_value_SIM_params[i,0:2], real_value_SIM_params[i,2], real_value_SIM_params[i,3]
-        if np.isnan(m):
-            m = 1
-        elif m < 0.1:
-            m = 1
-        m = 0.5
-        # m = calculate_modulation(input_SIM_data[:, direction_num * 2:(direction_num + 1) * 2],
-        #                          wide_field_image_direction, estimated_spatial_frequency, estimated_phase)
+        estimated_spatial_frequency,m,estimated_phase = real_value_SIM_params[i,0:2], real_value_SIM_params[i,2], real_value_SIM_params[i,3]
+        # m = 0.5
         estimated_SIM_pattern_parameters[i, :] = torch.tensor(
-            [*estimated_spatial_frequency, m, torch.tensor(estimated_phase)])
+            [*estimated_spatial_frequency, m, estimated_phase])
+
+        # if i % 2 == 1:
+        #     m = calculate_modulation(input_SIM_data[:, direction_num * 2:(direction_num + 1) * 2],
+        #                              wide_field_image_direction, estimated_spatial_frequency, estimated_SIM_pattern_parameters[i-1:i+1,3])
+        #
+        #     estimated_SIM_pattern_parameters[i-1:i+1,2] = torch.tensor([m])
+
+    "Second loop to generate the estimated illumination pattern"
+    for i in range(input_channel_num):
+        spatial_frequency = estimated_SIM_pattern_parameters[i, 0:2]
+        m = estimated_SIM_pattern_parameters[i, 2]
+        phase = estimated_SIM_pattern_parameters[i, 3]
         if experimental_parameters.upsample == True:
             estimated_SIM_pattern[:, i, :, :] = (m * torch.cos(
-                estimated_phase + 2 * math.pi * (
-                        estimated_spatial_frequency[0] / 2 * xx / image_size + estimated_spatial_frequency[
-                    1] / 2 * yy / image_size)) + 1) / 2
+                phase + 2 * math.pi * (
+                        spatial_frequency[0] / 2 * xx / image_size + spatial_frequency[
+                    1] / 2 * yy / image_size)) + 1)
         else:
             estimated_SIM_pattern[:, i, :, :] = (m * torch.cos(
-                estimated_phase + 2 * math.pi * (
-                        estimated_spatial_frequency[0] * xx / image_size + estimated_spatial_frequency[
-                    1] * yy / image_size)) + 1) / 2
+                phase + 2 * math.pi * (
+                        spatial_frequency[0] * xx / image_size + spatial_frequency[
+                    1] * yy / image_size)) + 1)
+
+    # blind_region = estimate_blind_region(estimated_SIM_pattern,estimated_SIM_pattern_parameters)
 
     return estimated_SIM_pattern, estimated_SIM_pattern_parameters
+
+def estimate_blind_region(estimated_SIM_pattern,estimated_SIM_pattern_parameters):
+    """
+    generate blind region of structured illumination for researching the effect
+    :param estimated_SIM_pattern:
+    :return: blind region image
+    """
+    channel_num  = estimated_SIM_pattern.size()[1]
+    beta = 0.5
+    blind_region = torch.zeros(estimated_SIM_pattern.size()[2],estimated_SIM_pattern.size()[3])
+    for i in range(channel_num):
+        m = estimated_SIM_pattern_parameters[i, 2]
+        temp_SIM_pattern = estimated_SIM_pattern[:, i, :, :].squeeze()
+        white_region_index = torch.where(temp_SIM_pattern > (2 * m * beta + temp_SIM_pattern.min()))
+        blind_region[white_region_index] = 1
+        common_utils.plot_single_tensor_image(blind_region)
+
+
+    return blind_region
 
 
 def estimate_spatial_frequency_pre_filtered_cross_correlation(wide_field_image_direction, SIM_data):
@@ -550,19 +581,118 @@ def template_match(index):
 
     return match_array_value
 
+def calculate_m_regression(SIM_data, WF, spatial_frequency, phase):
+    """
+    :param SIM_data:
+    :param WF: wide field image
+    :param spatial_frequency:
+    :param phase:
+    :return: modulation factor m
+    """
+
 
 def calculate_modulation(SIM_data, wide_field_image_direction, estimated_spatial_frequency, estimated_phase):
     """
+    Problem: The linear equation made from two raw data with pi interval are not independent!
     calculate the modulation depth. Firstly to separate the frequency component
     :param SIM_data:
     :param wide_field_image_direction:
     :param pixel_frequency: The estimated spatial frequency of sinusoidal pattern
     :return: the modulation depth m
     """
-    SIM_data = SIM_data.suqeeze()
-    SIM_data1 = SIM_data[0, :, :] - wide_field_image_direction
-    SIM_data2 = SIM_data[1, :, :] - wide_field_image_direction
-    param_matrix = torch.tensor([torch.exp(-i)])
+    SIM_data = SIM_data.squeeze()
+    SIM_data1 = (SIM_data[0, :, :] - wide_field_image_direction).numpy()
+    SIM_data2 = (SIM_data[1, :, :] - wide_field_image_direction).numpy()
+
+    image_size = SIM_data1.shape[0]
+
+    padding_size_one = image_size // 2
+    padding_size_two = (image_size + 1) // 2
+
+    phase1 = estimated_phase[0]
+    phase2 = estimated_phase[1]
+
+    param_matrix = torch.tensor([[torch.exp(-1j*phase1),torch.exp(1j*phase1)],[torch.exp(-1j*phase2),torch.exp(1j*phase2)]])
+    param_matrix = param_matrix.numpy()
+
+    SIM_data1_fft = fftshift(fft2(SIM_data1))
+    SIM_data2_fft = fftshift(fft2(SIM_data2))
+
+    param_matrix_inv = np.linalg.inv(param_matrix)
+
+    neg_1_order = param_matrix_inv[0, 0] * SIM_data1_fft + param_matrix_inv[0, 1] * SIM_data2_fft
+    pos_1_order = param_matrix_inv[1, 0] * SIM_data1_fft + param_matrix_inv[1, 1] * SIM_data2_fft
+
+    WF_numpy = wide_field_image_direction.numpy()
+    WF_fft = fftshift(fft2(WF_numpy))
+
+    experimental_parameters = SinusoidalPattern(probability=1, image_size=image_size)
+    if experimental_parameters.upsample == True:
+        OTF = experimental_parameters.OTF_upsmaple.numpy()
+        CTF = experimental_parameters.CTF_upsmaple.numpy()
+        neg_1_order = np.pad(neg_1_order, (padding_size_one, padding_size_two), 'constant')
+        pos_1_order = np.pad(pos_1_order, (padding_size_one, padding_size_two), 'constant')
+        WF_fft = np.pad(WF_fft, (padding_size_one, padding_size_two), 'constant')
+        image_size = image_size * 2
+
+    else:
+        OTF = experimental_parameters.OTF.numpy()
+        CTF = experimental_parameters.CTF.numpy()
+
+    xx, yy, _, _ = experimental_parameters.GridGenerate(experimental_parameters.upsample, grid_mode='pixel')
+
+    C_psf = fftshift(ifft2(ifftshift(CTF)))
+
+    psf_times_pos_phase_grad = C_psf * np.exp(1j * 2 * math.pi * (
+                estimated_spatial_frequency[0] / image_size  * xx + estimated_spatial_frequency[
+            1] / image_size  * yy).numpy())
+    pos_shift_CTF = abs(fftshift(fft2(psf_times_pos_phase_grad)) )
+    pos_shift_CTF[np.where(pos_shift_CTF<0.5)] = 0
+    overlap_region1 = pos_shift_CTF * CTF
+
+    psf_times_neg_phase_grad = C_psf * np.exp(-1j * 2 * math.pi * (
+                estimated_spatial_frequency[0] / image_size  * xx + estimated_spatial_frequency[
+            1] / image_size  * yy).numpy())
+    neg_shift_CTF = abs(fftshift(fft2(psf_times_neg_phase_grad)))
+    neg_shift_CTF[np.where(neg_shift_CTF < 0.5)] = 0
+    overlap_region2 = neg_shift_CTF * CTF
+
+    # weiner_param = 0.04
+    # neg_1_order_deconv = neg_1_order * OTF / (OTF**2 + weiner_param)
+    # pos_1_order_deconv = pos_1_order * OTF / (OTF**2 + weiner_param)
+    #
+    # WF_fft_deconv = WF_fft * OTF / (OTF**2 + weiner_param)
+
+    overlap_region1_index = np.where(overlap_region1 > 0.8)
+    overlap_region2_index = np.where(overlap_region2 > 0.8)
+
+    '利用衰减的方式：'
+    # a = neg_1_order[overlap_region1_index] * OTF[overlap_region2_index]
+    # b = WF_fft[overlap_region2_index] * OTF[overlap_region1_index]
+    # c = np.mean( abs(a)/abs(b) )
+
+    shift_OTF_pos = shift_fre_sepctrum_V1(OTF, estimated_spatial_frequency, xx, yy)
+    shift_OTF_neg = shift_fre_sepctrum_V1(OTF, -estimated_spatial_frequency, xx, yy)
+
+    shift_WF_fft_pos = shift_fre_sepctrum_V1(WF_fft, estimated_spatial_frequency, xx, yy,model = 'image')
+    WF_fft_overlap_region1 = abs(shift_WF_fft_pos) * abs(OTF)
+    pos_1_order_overlap_region1 = abs(shift_OTF_pos) * abs(pos_1_order)
+
+    shift_WF_fft_neg = shift_fre_sepctrum_V1(WF_fft, -estimated_spatial_frequency, xx, yy,model = 'image')
+    WF_fft_overlap_region2 = abs(shift_WF_fft_neg) * abs(OTF)
+    neg_1_order_overlap_region2 = abs(shift_OTF_neg) * abs(neg_1_order)
+
+    # m = np.mean(pos_1_order_overlap_region1[overlap_region2_index]) / np.mean(WF_fft_overlap_region1[overlap_region2_index]) + np.mean(neg_1_order_overlap_region2[overlap_region1_index]) / np.mean(WF_fft_overlap_region2[overlap_region1_index])
+    m = np.mean(pos_1_order_overlap_region1 * overlap_region2) / np.mean(WF_fft_overlap_region1 * overlap_region2) + np.mean(neg_1_order_overlap_region2 * overlap_region1) / np.mean(WF_fft_overlap_region2 * overlap_region1)
+    # m = 0.5 * ( np.mean(abs(neg_1_order_deconv[overlap_region1_index]) / abs(WF_fft_deconv[overlap_region2_index]) ) +
+    #             np.mean(abs(pos_1_order_deconv[overlap_region2_index]) / abs(WF_fft_deconv[overlap_region1_index])) )
+
+    print("m = %f" % (m))
+
+    # m = 1
+
+
+    return m
 
 
 def calculate_modulation_factor_overlap_region(SIM_first_order, WF_image, estimated_spatial_frequency):
@@ -672,6 +802,27 @@ def shift_fre_sepctrum(image, shift_vector, xx, yy):
             shift_vector[0] / image_size / 2 * xx + shift_vector[
         1] / image_size / 2 * yy).numpy())
     shifted_image_fre_spectrum = fftshift(fft2(image_x_gradient_matrix, axes=(0, 1)), axes=(0, 1))
+
+    return shifted_image_fre_spectrum
+
+def shift_fre_sepctrum_V1(fre_sepctrum, shift_vector, xx, yy, model = 'OTF'):
+    """
+    shift the frequency spectrum of input image in subpixel precision by multiplying gradient matrix in spatial domain
+    :param image:
+    :param shift_vector: the subpixel shift_vector
+    :param xx: the gird matrix in x direction
+    :param yy: the gird matrix in y direction
+    :return: shifted frequency spectrum
+    """
+    image_size = fre_sepctrum.shape[0]
+    if model == 'OTF':
+        image = fftshift(ifft2(ifftshift(fre_sepctrum)))
+    else:
+        image = abs(ifft2(ifftshift(fre_sepctrum)))
+    image_times_gradient_matrix = image * np.exp(-1j * 2 * math.pi * (
+            shift_vector[0] / image_size * xx + shift_vector[
+        1] / image_size* yy).numpy())
+    shifted_image_fre_spectrum = fftshift(fft2(image_times_gradient_matrix))
 
     return shifted_image_fre_spectrum
 

@@ -43,12 +43,13 @@ def calculate_phase(image,pixel_frequency):
 
 def calculate_spatial_frequency (image, model = 'normal'):
     image = image.squeeze()
+    image2 = image * image
     image_size = image.size()[0]
     experimental_parameters = SinusoidalPattern(probability = 1,image_size = image_size)
     OTF = experimental_parameters.OTF.numpy()
 
-    image_np = image.detach().numpy()
-    fft_numpy_image = fftshift(fft2(image_np, axes=(0, 1)), axes=(0, 1))
+    image2_np = image2.detach().numpy()
+    fft_numpy_image = fftshift(fft2(image2_np, axes=(0, 1)), axes=(0, 1))
     abs_fft_np_image = abs(fft_numpy_image)
 
     deconv_fft =  abs_fft_np_image * (OTF / (OTF * OTF + 0.04))
@@ -66,7 +67,7 @@ def calculate_spatial_frequency (image, model = 'normal'):
     x0 = torch.tensor(peak_position_pixel)
 
     max_iteritive = 400
-    peak_subpixel_location,estimated_modulation_facotr = maxmize_shift_peak_intesity(image_np, peak_position_pixel, max_iteritive)
+    peak_subpixel_location,estimated_modulation_facotr = maxmize_shift_peak_intesity(image2_np, peak_position_pixel, max_iteritive)
     frequency_peak = x0 + peak_subpixel_location
 
     image_size = image.size()

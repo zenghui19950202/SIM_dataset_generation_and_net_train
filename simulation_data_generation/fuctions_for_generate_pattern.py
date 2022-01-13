@@ -34,7 +34,7 @@ class SinusoidalPattern(Operations.Operation):
     This class is used to add Sinusoidal Pattern on images.
     """
 
-    def __init__(self, probability,image_size = None):  # unit: nm
+    def __init__(self, probability,image_size = None,config_params_direct = None):  # unit: nm
         """
         As well as the always required :attr:`probability` parameter, the
         constructor requires a :attr:`percentage_area` to control the area
@@ -46,9 +46,12 @@ class SinusoidalPattern(Operations.Operation):
          performed when it is invoked in the pipeline.
         :type probability: Float
         """
-        data_generation_parameters = load_configuration_parameters.load_data_generation_config_paras()
+        data_generation_parameters = load_configuration_parameters.load_data_generation_config_paras(config_params_direct)
         config = ConfigParser()
-        config.read('../configuration.ini')
+        if config_params_direct == None:
+            config.read('../configuration.ini')
+        else:
+            config.read(config_params_direct)
         SourceFileDirectory = data_generation_parameters['SourceFileDirectory']
         self.Magnification = data_generation_parameters['Magnification']
         self.PixelSizeOfCCD = data_generation_parameters['PixelSizeOfCCD']
@@ -79,6 +82,7 @@ class SinusoidalPattern(Operations.Operation):
             self.xx_upsmaple, self.yy_upsmaple, self.fx_upsmaple, self.fy_upsmaple = self.GridGenerate(up_sample=self.upsample)
             self.f_upsample = pow((self.fx_upsmaple ** 2 + self.fy_upsmaple ** 2), 1 / 2)
             self.OTF_upsmaple = self.OTF_form(fc_ratio=1,upsample = True)
+            self.CTF_upsmaple = self.CTF_form(fc_ratio=1,upsample = True)
         else:
             self.upsample = False
             self.xx, self.yy, self.fx, self.fy = self.GridGenerate()
@@ -116,8 +120,8 @@ class SinusoidalPattern(Operations.Operation):
             TensorImage = transforms.ToTensor()(image_gray)
 
             # augmented_images += self.LR_image_generator(imag_pad_crop)
-            augmented_images += self.SR_image_generator(TensorImage)
             augmented_images += self.LR_image_generator(TensorImage)
+            augmented_images += self.SR_image_generator(TensorImage)
             augmented_images += self.SinusoidalPattern(TensorImage)
             # print('hello')
 
@@ -386,13 +390,14 @@ class SinusoidalPattern(Operations.Operation):
         psf_crop = psf_tensor[id[0]:id[-1] + 1, id[0]:id[-1] + 1]
         return psf_crop
 
-    def apodization_function_generator(self, fc_ratio=1.8,upsample = False):
-        f0 = fc_ratio * self.f_cutoff
+    def apodization_function_generator(self, freq, upsample = False):
         if upsample == False:
             f = self.f
         elif upsample == True:
             f = self.f_upsample
-        apodization_function = torch.cos( f / f0 * math.pi / 2)
+        sigma = freq * 0.5
+        apodization_function = torch.where(f < freq, math.sqrt(1/ 2.0 / math.pi / sigma**2) * torch.exp(-0.5 * f**2 / sigma**2), torch.Tensor([0]))
+
         return apodization_function
 
 

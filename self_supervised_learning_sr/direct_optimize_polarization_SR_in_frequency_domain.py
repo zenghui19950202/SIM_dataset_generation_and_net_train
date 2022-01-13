@@ -36,112 +36,14 @@ def try_gpu():
         device = torch.device('cpu')
     return device
 
-
-def compare_reconstruction_quality_using_different_input_frames(SIM_data_dataloader, image_show=False):
-    data_num = 0
-    for SIM_data in SIM_data_dataloader:
-        SIM_raw_data = SIM_data[0]
-        SSIM_of_diff_input_num = torch.zeros(5, 1)
-        PSNR_of_diff_input_num = torch.zeros(5, 1)
-        for i in range(5):
-            SSIM_of_diff_input_num[i, 0], PSNR_of_diff_input_num[i, 0], SR = SR_reconstruction(SIM_data,
-                                                                                               input_num=i + 5,
-                                                                                               image_show=image_show)
-        if data_num == 0:
-            SSIM = SSIM_of_diff_input_num
-            PSNR = PSNR_of_diff_input_num
-        else:
-            SSIM = torch.cat([SSIM, SSIM_of_diff_input_num], 1)
-            PSNR = torch.cat([PSNR, PSNR_of_diff_input_num], 1)
-        data_num += 1
-        if data_num > 30:
-            break
-
-    SSIM_mean = torch.mean(SSIM, 1).numpy()
-    SSIM_std = torch.std(SSIM, 1).numpy()
-
-    PSNR_mean = torch.mean(PSNR, 1).numpy()
-    PSNR_std = torch.std(PSNR, 1).numpy()
-
-    np.save(save_file_directory + "SSIM.npy", SSIM.numpy())
-    np.save(save_file_directory + "PSNR.npy", PSNR.numpy())
-
-    index = np.arange(5)
-    total_width, n = 0.4, 2
-    width = total_width / n
-
-    plt.title('A Bar Chart')
-    plt.bar(index, SSIM_mean, width=width, yerr=SSIM_std, error_kw={'ecolor': '0.2', 'capsize': 6}, alpha=0.7,
-            label='SSIM', color='#583d72')
-    plt.legend(loc=2)
-    plt.savefig(save_file_directory + 'SSIM_bar.eps', dpi=600, format='eps')
-    plt.show()
-    plt.bar(index - width, PSNR_mean, width=width, yerr=PSNR_std, error_kw={'ecolor': '0.2', 'capsize': 6}, alpha=0.7,
-            label='PSNR', color='#9f5f80')
-    plt.xticks(index + 0.2, ['5', '6', '7', '8', '9'])
-    plt.legend(loc=2)
-    plt.grid(linestyle='--', c='#bbbbbb')
-    plt.savefig(save_file_directory + 'PSNR_bar.eps', dpi=600, format='eps')
-    plt.show()
-
-def calculate_polar_approximation(polarization_ratio_direct,polarization_ratio_angle_estimated,experimental_params):
-    # polarization_ratio 是直接除法近似得到， polarization_ratio_estimated是先计算偏振角再计算得到
-    polarization_ratio_load = torch.zeros_like(polarization_ratio_direct)
-    SSIM_angle,PSNR_angle,mse_loss_angle  = 0,0,0
-    SSIM_direct,PSNR_direct,mse_loss_direct  = 0,0,0
-    SSIM_direct_and_angle,PSNR_direct_and_angle =0,0
-    mse = nn.MSELoss()
-    file_name = save_file_directory + '/SIMdata_SR_train/0absorption_efficiency.pt'
-    for i in range(9):
-        polar_estimated_direct = polarization_ratio_direct[0, i, :, :]
-        polar_estimated_angle = polarization_ratio_angle_estimated[0, i, :, :]
-        polar_estimated_angle /= polar_estimated_angle.max()
-
-        polar_estimated_direct /= polar_estimated_direct.max()
-
-        polar_estimated_angle_np = polar_estimated_angle.cpu().squeeze().detach().numpy() * 255
-        polar_estimated_direct_np = polar_estimated_direct.cpu().squeeze().detach().numpy() * 255
-
-        if os.path.exists(file_name):
-            polarization_ratio_load[0, i, :, :] = torch.load(
-                save_file_directory + '/SIMdata_SR_train/' + str(i) + 'absorption_efficiency.pt')
-
-            polar_GT = experimental_params.OTF_Filter(polarization_ratio_load[0, i, :, :], experimental_params.OTF)
-            polar_GT = polar_GT / polar_GT.max()
-            polar_GT_np = polar_GT.cpu().squeeze().detach().numpy() * 255
-
-
-            SSIM_direct += SRimage_metrics.calculate_ssim(polar_estimated_direct_np, polar_GT_np)
-            PSNR_direct += SRimage_metrics.calculate_psnr_np(polar_estimated_direct_np, polar_GT_np)
-            mse_loss_direct+=mse(polar_GT, polar_estimated_direct)
-
-            SSIM_angle += SRimage_metrics.calculate_ssim(polar_estimated_angle_np, polar_GT_np)
-            PSNR_angle += SRimage_metrics.calculate_psnr_np(polar_estimated_angle_np, polar_GT_np)
-            mse_loss_angle += mse(polar_GT, polar_estimated_angle)
-    # polarization_ratio = polarization_ratio_load
-
-        else:
-            SSIM_direct_and_angle+= SRimage_metrics.calculate_ssim(polar_estimated_direct_np, polar_estimated_angle_np)
-            PSNR_direct_and_angle += SRimage_metrics.calculate_psnr_np(polar_estimated_direct_np, polar_estimated_angle_np)
-    if os.path.exists(file_name):
-        SSIM_direct /= 9
-        PSNR_direct /= 9
-        mse_loss_direct /= 9
-        SSIM_angle /= 9
-        PSNR_angle /= 9
-        mse_loss_angle /= 9
-        print(' polarization_ratio: SSIM_direct:%f, PSNR_direct:%f ' % (SSIM_direct, PSNR_direct))
-        print(' polarization_ratio: SSIM_angle:%f, PSNR_angle:%f ' % (SSIM_angle, PSNR_angle))
-    else:
-        SSIM_direct_and_angle/= 9
-        PSNR_direct_and_angle/=9
-        print(' No GT data, polarization_ratio: SSIM_direct_and_angle:%f, PSNR_direct_and_angle:%f ' % (SSIM_direct_and_angle, PSNR_direct_and_angle))
 def reconstruction(SIM_data, SIM_pattern, input_num=5, image_show=True):
     """Train and evaluate a model with CPU or GPU."""
     print('training on', device)
 
     LR_HR = SIM_data[1]
     SIM_raw_data = SIM_data[0]
+
+    SIM_raw_data = common_utils.shuffle_image(SIM_raw_data,0)
 
     image_size = [SIM_raw_data.size()[2], SIM_raw_data.size()[3]]
     experimental_params = funcs.SinusoidalPattern(probability=1, image_size=image_size[0]) #
@@ -208,7 +110,7 @@ def reconstruction(SIM_data, SIM_pattern, input_num=5, image_show=True):
     params += [{'params': SR_image, 'weight_decay': weight_decay}]
     # params += [{'params': estimated_modulation_factor}]
     # optimizer_SR_and_polarization = optim.Adam(params, lr=0.001)
-    optimizer_SR_and_polarization = optim.Adam(params, lr=0.01)
+    optimizer_SR_and_polarization = optim.Adam(params, lr=lr)
 
 
     input_SIM_raw_data = input_SIM_raw_data.to(device)
@@ -224,8 +126,8 @@ def reconstruction(SIM_data, SIM_pattern, input_num=5, image_show=True):
     reconstruction_start = time.time()
     SR_result = SR_reconstruction(SR_image, input_SIM_raw_data_fft, optimizer_SR_and_polarization,
                                   input_polarization_ratio,
-                                  temp_input_SIM_pattern, estimated_pattern_parameters, experimental_params,
-                                  image_show=image_show)
+                                  temp_input_SIM_pattern, estimated_pattern_parameters, experimental_params,input_SIM_raw_data,
+                                  image_show=image_show,LR_image = LR)
 
     """"
     PiFP reconstruction
@@ -276,6 +178,197 @@ def init_weights(m):
     if type(m) == nn.Linear or type(m) == nn.Conv2d:
         torch.nn.init.xavier_uniform_(m.weight)
 
+def SR_reconstruction(SR_image, input_SIM_raw_data_fft, optimizer_SR_and_polarization,
+                      polarization_ratio, input_SIM_pattern, estimated_pattern_parameters, experimental_params,input_SIM_raw_data,
+                      image_show=True,LR_image = None):
+    device = SR_image.device
+    if experimental_params.upsample == True:
+        OTF = experimental_params.OTF_upsmaple.to(device)
+        CTF = experimental_params.CTF_upsmaple.to(device)
+        fx, fy = experimental_params.fx_upsmaple, experimental_params.fy_upsmaple
+    else:
+        OTF = experimental_params.OTF.to(device)
+        CTF = experimental_params.CTF.to(device)
+        fx, fy = experimental_params.fx, experimental_params.fy
+    OTF_extended = experimental_params.OTF_form(fc_ratio=3, upsample=experimental_params.upsample)
+    fr = pow(fx, 2) + pow(fy, 2)
+    sigma = experimental_params.f_cutoff / 4
+    high_pass_filter = 1 - torch.exp(-fr / sigma ** 2)
+    high_pass_filter = high_pass_filter.unsqueeze(2).to(device)
+    high_pass_filter = 1
+    LR_image = LR_image.to(device)
+    # common_utils.plot_single_tensor_image(high_pass_filter)
+
+    loss_list = iterative_recon_one_shot(optimizer_SR_and_polarization, estimated_pattern_parameters, SR_image, input_SIM_pattern,
+                             polarization_ratio, OTF, input_SIM_raw_data_fft,input_SIM_raw_data)
+
+    # loss_list = iterative_recon_three_shot(optimizer_SR_and_polarization, estimated_pattern_parameters, SR_image, input_SIM_pattern,
+    #                          polarization_ratio, OTF, input_SIM_raw_data_fft)
+
+    # loss_list,SR_image = iterative_recon_three_shot_individual(SR_image, input_SIM_pattern,
+    #                                       polarization_ratio, OTF, input_SIM_raw_data_fft)
+
+
+    loss_np = np.array(loss_list)
+    # common_utils.save_loss_npy(loss_np,SR_result_save_directory)
+    # loss_load = np.load(loss_save_direc+'.npy')
+    epoch_list = [x for x in range(1,num_epochs+1,1)]
+    plt.plot(epoch_list,loss_np,c='red')
+    plt.show()
+
+    if image_show == True:
+        result = SR_image.squeeze()
+        result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters,
+                                                                        experimental_params,attenuate_factor = 2).squeeze().detach().cpu()
+        spatial_freq = torch.sqrt(estimated_pattern_parameters[0,0]**2 + estimated_pattern_parameters[0,1]**2).detach().cpu()*experimental_params.delta_fx
+        apodization_func = experimental_params.apodization_function_generator(experimental_params.f_cutoff+spatial_freq,upsample = experimental_params.upsample)
+
+        # result = experimental_params.OTF_Filter(result.detach().cpu(), apodization_func.detach().cpu())
+        # result = freq_domain_SIM_flower_filter(result.detach().cpu(), estimated_pattern_parameters,CTF)
+        # result = generlized_wiener_filter(result.detach().cpu(),estimated_pattern_parameters)
+        common_utils.plot_single_tensor_image(result)
+
+    return result.cpu().detach()
+
+def iterative_recon_one_shot(optimizer_SR_and_polarization,estimated_pattern_parameters,SR_image,input_SIM_pattern,polarization_ratio,OTF,input_SIM_raw_data_fft,input_SIM_raw_data):
+    loss_list = []
+
+    for epoch in range(num_epochs):
+        loss = torch.tensor([0.0], dtype=torch.float32, device=device)
+        optimizer_SR_and_polarization.zero_grad()
+        for i in range(estimated_pattern_parameters.size()[0]):
+            theta = torch.atan(estimated_pattern_parameters[i, 1] / estimated_pattern_parameters[i, 0])
+            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1 + 0.6 * torch.cos(2 * theta - 2 * polarization_direction))
+            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * polarization_ratio[:, i, :, :]
+            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :]
+            sample_light_field_complex = torch.stack(
+                [sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
+            SIM_raw_data_fft_estimated = forward_model.torch_2d_fftshift(
+                torch.fft((sample_light_field_complex), 2)) * OTF.unsqueeze(2)
+
+            # SIM_raw_data_estimated = forward_model.complex_stack_to_intensity(torch.ifft(forward_model.torch_2d_ifftshift(SIM_raw_data_fft_estimated),2) )
+            # mse_loss = criterion(input_SIM_raw_data[:, i, :, :], SIM_raw_data_estimated,1, OTF, normalize=False, deconv=False)
+
+            mse_loss = criterion(SIM_raw_data_fft_estimated, input_SIM_raw_data_fft[:, i, :, :, :], 1,
+                                 OTF, normalize=False, deconv=False)
+            loss += mse_loss
+        # loss += loss_functions.tv_loss_calculate(abs(SR_image),1)
+        # loss += 5 * torch.norm(abs(SR_image),1)
+
+        # for param_group in optimizer_SR_and_polarization.param_groups:
+        #     lr = lr
+        #     param_group['lr'] = lr
+        loss.backward()
+        optimizer_SR_and_polarization.step()
+
+        with torch.no_grad():
+            train_loss = loss.float()
+            loss_list.append(loss.detach().cpu().numpy())
+        print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
+
+    return loss_list
+
+def iterative_recon_three_shot(optimizer_SR_and_polarization, estimated_pattern_parameters, SR_image, input_SIM_pattern,
+                             polarization_ratio, OTF, input_SIM_raw_data_fft):
+
+    loss_list = []
+    loss = torch.tensor([0.0], dtype=torch.float32, device=device)
+    optimizer_SR_and_polarization.zero_grad()
+
+    if input_num == 6:
+        num_one_dir = 2
+    elif input_num == 9:
+        num_one_dir = 3
+
+    for epoch in range(num_epochs):
+
+        for i in range(estimated_pattern_parameters.size()[0]):
+            theta = torch.atan(estimated_pattern_parameters[i, 1] / estimated_pattern_parameters[i, 0])
+            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1 + 0.6 * torch.cos(2 * theta - 2 * polarization_direction))
+            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * polarization_ratio[:, i, :, :]
+            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :]
+            sample_light_field_complex = torch.stack(
+                [sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
+            SIM_raw_data_fft_estimated = forward_model.torch_2d_fftshift(
+                torch.fft((sample_light_field_complex), 2)) * OTF.unsqueeze(2)
+
+            mse_loss = criterion(SIM_raw_data_fft_estimated, input_SIM_raw_data_fft[:, i, :, :, :], 1,
+                                 OTF,
+                                 normalize=False, deconv=False)
+            loss += mse_loss
+            if i % num_one_dir == 1:
+                loss += loss_functions.tv_loss_calculate(abs(SR_image), 1)
+                loss += 5 * torch.norm(abs(SR_image), 1)
+                loss.backward()
+                optimizer_SR_and_polarization.step()
+                loss = torch.tensor([0.0], dtype=torch.float32, device=device)
+                optimizer_SR_and_polarization.zero_grad()
+
+        with torch.no_grad():
+            train_loss = loss.float()
+            loss_list.append(loss.detach().cpu().numpy())
+        print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
+
+    return loss_list
+
+def iterative_recon_three_shot_individual(SR_image, input_SIM_pattern,
+                             polarization_ratio, OTF, input_SIM_raw_data_fft):
+
+    loss_list = []
+
+    SR_image0 = copy.deepcopy(SR_image)
+    SR_image1 = copy.deepcopy(SR_image)
+    SR_image2 = copy.deepcopy(SR_image)
+
+    SR_image0.requires_grad, SR_image1.requires_grad, SR_image2.requires_grad = True, True, True
+
+    params0 = [{'params': SR_image0, 'weight_decay': weight_decay}]
+    params1 = [{'params': SR_image1, 'weight_decay': weight_decay}]
+    params2 = [{'params': SR_image2, 'weight_decay': weight_decay}]
+    optimizer_pattern_params0 = optim.Adam(params0, lr=lr)
+    optimizer_pattern_params1 = optim.Adam(params1, lr=lr)
+    optimizer_pattern_params2 = optim.Adam(params2, lr=lr)
+
+    SR_image_list = [SR_image0, SR_image1, SR_image2]
+
+    optimizer = [optimizer_pattern_params0, optimizer_pattern_params1, optimizer_pattern_params2]
+
+    if input_num == 6:
+        num_phase = 2
+    elif input_num == 9:
+        num_phase = 3
+
+    for epoch in range(num_epochs):
+
+        i = int(epoch * 3 / num_epochs)
+        loss = torch.tensor([0.0], dtype=torch.float32, device=device)
+        optimizer[i].zero_grad()
+        SR_image_iterative = SR_image_list[i]
+        for j in range(num_phase):
+            num_SIM_data = i * num_phase + j
+            # sample_light_field = SR_image_interative * input_SIM_pattern[:, num_SIM_data , :, :] * polarization_ratio[:, num_SIM_data, :, :]
+            sample_light_field = SR_image_iterative * input_SIM_pattern[:, num_SIM_data, :, :]
+
+            sample_light_field_complex = torch.stack(
+                [sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
+            SIM_raw_data_fft_estimated = forward_model.torch_2d_fftshift(
+                torch.fft((sample_light_field_complex), 2)) * OTF.unsqueeze(2)
+            loss += criterion(SIM_raw_data_fft_estimated, input_SIM_raw_data_fft[:, num_SIM_data, :, :, :], 1, OTF, normalize=False, deconv=False)
+
+
+        # loss += loss_functions.tv_loss_calculate(abs(SR_image_iterative), 1)
+        # loss += 5 * torch.norm(abs(SR_image_interative), 1)
+        loss.backward()
+        optimizer[i].step()
+
+        with torch.no_grad():
+            train_loss = loss.float()
+            loss_list.append(loss.detach().cpu().numpy())
+        print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
+
+    SR_image = (SR_image0 + SR_image1 + SR_image2)/3
+
+    return loss_list, SR_image
 
 def unsample_process(image_size, input_SIM_raw_data, CTF, upsample_flag=False):
     device = CTF.device
@@ -315,75 +408,6 @@ def unsample_process(image_size, input_SIM_raw_data, CTF, upsample_flag=False):
 
     return SIM_raw_data, input_SIM_raw_data_fft
 
-
-def SR_reconstruction(SR_image, input_SIM_raw_data_fft, optimizer_SR_and_polarization,
-                      polarization_ratio, input_SIM_pattern, estimated_pattern_parameters, experimental_params,
-                      image_show=True):
-    device = SR_image.device
-    if experimental_params.upsample == True:
-        OTF = experimental_params.OTF_upsmaple.to(device)
-        CTF = experimental_params.CTF_upsmaple.to(device)
-        fx, fy = experimental_params.fx_upsmaple, experimental_params.fy_upsmaple
-    else:
-        OTF = experimental_params.OTF.to(device)
-        CTF = experimental_params.CTF.to(device)
-        fx, fy = experimental_params.fx, experimental_params.fy
-    OTF_extended = experimental_params.OTF_form(fc_ratio=3, upsample=experimental_params.upsample)
-    fr = pow(fx, 2) + pow(fy, 2)
-    sigma = experimental_params.f_cutoff / 4
-    high_pass_filter = 1 - torch.exp(-fr / sigma ** 2)
-    high_pass_filter = high_pass_filter.unsqueeze(2).to(device)
-    high_pass_filter = 1
-    # common_utils.plot_single_tensor_image(high_pass_filter)
-
-    reg_noise_std = 0.03
-
-    for epoch in range(num_epochs):
-        loss = torch.tensor([0.0], dtype=torch.float32, device=device)
-        optimizer_SR_and_polarization.zero_grad()
-        for i in range(estimated_pattern_parameters.size()[0]):
-            theta = torch.atan(estimated_pattern_parameters[i, 1] / estimated_pattern_parameters[i, 0])
-            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * (1 + 0.6 * torch.cos(2 * theta - 2 * polarization_direction))
-            sample_light_field = SR_image * input_SIM_pattern[:, i, :, :] * polarization_ratio[:, i, :, :]
-            # sample_light_field = SR_image * input_SIM_pattern[:, i, :, :]
-            sample_light_field_complex = torch.stack(
-                [sample_light_field.squeeze(), torch.zeros_like(sample_light_field).squeeze()], 2)
-            SIM_raw_data_fft_estimated = forward_model.torch_2d_fftshift(
-                torch.fft((sample_light_field_complex), 2)) * OTF.unsqueeze(2)
-
-            mse_loss = criterion(SIM_raw_data_fft_estimated, input_SIM_raw_data_fft[:, i, :, :, :], 1,
-                                 OTF,
-                                 normalize=False, deconv=False)
-            loss += mse_loss
-        # loss+=   loss_functions.tv_loss_calculate(abs(SR_image))
-        # for param_group in optimizer_SR_and_polarization.param_groups:
-        #     lr = lr
-        #     param_group['lr'] = lr
-        loss.backward()
-        optimizer_SR_and_polarization.step()
-
-        with torch.no_grad():
-            train_loss = loss.float()
-
-        print('epoch: %d/%d, train_loss: %f' % (epoch + 1, num_epochs, train_loss))
-
-    if image_show == True:
-        result = SR_image.squeeze()
-        result = processing_utils.notch_filter_for_all_vulnerable_point(SR_image, estimated_pattern_parameters,
-                                                                        experimental_params).squeeze().detach().cpu()
-        spatial_freq = torch.sqrt(estimated_pattern_parameters[0,0]**2 + estimated_pattern_parameters[0,1]**2).detach().cpu()*experimental_params.delta_fx
-        apodization_func = experimental_params.apodization_function_generator(experimental_params.f_cutoff+spatial_freq,upsample = experimental_params.upsample)
-
-        # result = experimental_params.OTF_Filter(result.detach().cpu(), apodization_func.detach().cpu())
-        # result = freq_domain_SIM_flower_filter(result.detach().cpu(),estimated_pattern_parameters,CTF)
-        # result = generlized_wiener_filter(result.detach().cpu(),estimated_pattern_parameters)
-        common_utils.plot_single_tensor_image(result)
-
-    return result.cpu().detach()
-
-
-# def polarization_reconstruction(SIM_data, input_num=4, SR):
-
 if __name__ == '__main__':
     train_net_parameters = load_configuration_parameters.load_train_net_config_paras()
     train_directory_file = train_net_parameters['train_directory_file']
@@ -400,7 +424,7 @@ if __name__ == '__main__':
     opt_over = train_net_parameters['opt_over']
 
     param_grid = {
-        'learning_rate': [0.001],
+        'learning_rate': [0.01],
         'batch_size': [1],
         'weight_decay': [1e-5],
         'Dropout_ratio': [1]
@@ -415,7 +439,7 @@ if __name__ == '__main__':
 
     random.seed(60)  # 设置随机种子
     # min_loss = 1e5
-    num_epochs =  400
+    num_epochs =  600
 
     random_params = {k: random.sample(v, 1)[0] for k, v in param_grid.items()}
     lr = random_params['learning_rate']
@@ -440,7 +464,10 @@ if __name__ == '__main__':
             break
         data_id += 1
 
-    SSIM, PSNR, best_SR = reconstruction(SIM_data, SIM_pattern, input_num=6)
+    SR_result_save_directory = save_file_directory + 'lr_'+str(lr) + '_' + 'epoch_' + str(num_epochs)
+
+    input_num = 3
+    SSIM, PSNR, best_SR = reconstruction(SIM_data, SIM_pattern, input_num=input_num)
 
     # denoise_SIM_SR = denoise.denoise_DIP(best_SR.float())
     # common_utils.plot_single_tensor_image(denoise_SIM_SR)
@@ -449,7 +476,8 @@ if __name__ == '__main__':
         best_SR = best_SR.reshape([1, best_SR.size()[0], best_SR.size()[1], 3])
     elif best_SR.dim() == 2:
         best_SR = best_SR.reshape([1, 1, best_SR.size()[0], best_SR.size()[1]])
-    common_utils.save_image_tensor2pillow(best_SR, save_file_directory)
+
+    common_utils.save_image_tensor2pillow(best_SR, SR_result_save_directory)
     end_time = time.time()
 
     print(' SSIM:%f, PSNR:%f,time: %f ' % (SSIM, PSNR, end_time - start_time))

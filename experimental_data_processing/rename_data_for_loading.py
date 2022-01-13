@@ -5,6 +5,7 @@ import cv2
 import torch
 import os
 import uuid
+import numpy as np
 
 def rename_data_for_loading(image_directory,crop_size = 512, data_name = '0000000',LR_name ='UnapodizedReconstruction', HR_name = 'WideField'):
     SIM_data_image_directoty = image_directory + '/' + data_name + '1'+ '.' + 'tif'
@@ -55,6 +56,9 @@ def rename_data_for_loading(image_directory,crop_size = 512, data_name = '000000
         cv2.imwrite(save_name, LR_image_np)
 
     if image_size[0] < crop_size:
+        pad_size = crop_size - image_size[0]
+        pad_size_one = pad_size//2
+        pad_size_two = (pad_size+1)//2
         for i in range(image_number):
             SIM_data_image_directoty = image_directory \
                                        + '/' \
@@ -73,8 +77,9 @@ def rename_data_for_loading(image_directory,crop_size = 512, data_name = '000000
                                                + str(i + 1) \
                                                + ")_" \
                                                + '.' + 'tif'
-            cv2.imwrite(SIM_data_renamed_directoty,SIM_image_np)
-            cv2.imwrite(SIM_pattern_renamed_directoty, SIM_image_np)
+            SIM_image_np_pad = np.pad(SIM_image_np,(pad_size_one,pad_size_two),'constant')
+            cv2.imwrite(SIM_data_renamed_directoty,SIM_image_np_pad)
+            cv2.imwrite(SIM_pattern_renamed_directoty, SIM_image_np_pad)
     else:
         for i in range(image_number):
             SIM_data_image_directoty = image_directory \
@@ -106,4 +111,4 @@ def crop_center(img,crop_size):
     return img[starty:(starty+crop_size), startx:(startx+crop_size)]
 if __name__ == '__main__':
     # rename_data_for_loading('/home/common/zenghui/2/', LR_name ='AVG_raw-530nm', HR_name = 'AVG_raw-530nm' )
-    rename_data_for_loading('/data/zh/self_supervised_learning_SR/test_for_self_9_frames_supervised_SR_net/microtube2/',data_name ='0000000' , LR_name ='WideField', HR_name = 'UnapodizedReconstruction' )
+    rename_data_for_loading('/data1/zh1/PRSIM/Lal_4SIM/microtublin/',crop_size= 256, data_name ='0000000', LR_name ='WideField', HR_name = 'UnapodizedReconstruction' )

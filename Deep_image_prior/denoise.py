@@ -109,7 +109,7 @@ def init_weights(m):
 
 def denoise_DIP(SIM_SR):
     param_grid = {
-        'learning_rate': [0.01],
+        'learning_rate': [0.001],
         'batch_size': [1],
         # 'weight_decay': [1e-5],
         'weight_decay': [0],

@@ -30,7 +30,7 @@ def complex_stack_to_intensity(image_complex_stack):
         raise Exception('input dim is error')
     return pow( pow(image_complex_stack[:,:,0],2)+ pow(image_complex_stack[:,:,1],2), 1/2 )
 
-def winier_deconvolution(image,OTF):
+def wiener_deconvolution(image, OTF):
     image = image.squeeze()
     real_part_image = image
     imaginary_part_image = torch.zeros_like(image)

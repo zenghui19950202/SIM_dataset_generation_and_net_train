@@ -50,8 +50,8 @@ class SIM_data_load(data.Dataset):
                              + '.' + image_format
 
         if image_format == 'tif' or image_format == 'tiff':
-            HR_image_np = cv2.imread(HR_image_directoty, -1)/1.0
-            LR_image_np = cv2.imread(LR_image_directoty, -1)/1.0
+            HR_image_np = cv2.imread(HR_image_directoty, 0)/1.0
+            LR_image_np = cv2.imread(LR_image_directoty, 0)/1.0
             image_size = [LR_image_np.shape[0], LR_image_np.shape[1]]
             self.image_size = image_size
             HR_image_tensor = torch.from_numpy(HR_image_np)
@@ -65,8 +65,10 @@ class SIM_data_load(data.Dataset):
                                            + str(i + 1) \
                                            + ")_" \
                                            + '.' + image_format
-                SIM_image_np = cv2.imread(SIM_data_image_directoty, -1)/1.0
+                SIM_image_np = cv2.imread(SIM_data_image_directoty, 0)/1.0
                 SIM_image_tensor = torch.from_numpy(SIM_image_np)
+                if SIM_image_tensor.dim() == 3:
+                    SIM_image_tensor = SIM_image_tensor[:,:,0]
                 if self.normalize == True:
                     SIM_image_tensor = SIM_image_tensor/SIM_image_tensor.max()
 
@@ -145,7 +147,7 @@ class SIM_pattern_load(SIM_data_load):
                                            + str(i + 1) \
                                            + ")_" \
                                            + '.' + self.image_format
-                SIM_image_np = cv2.imread(SIM_data_image_directoty, -1)/1.0
+                SIM_image_np = cv2.imread(SIM_data_image_directoty, 0)/1.0
                 SIM_image_tensor = torch.from_numpy(SIM_image_np)
                 SIM_pattern_data[i, :, :] = SIM_image_tensor
         else:

@@ -26,7 +26,7 @@ def load_train_net_config_paras():
     train_net_parameters['num_epochs'] = config.getint('hyparameter', 'num_epochs')
     train_net_parameters['image_size'] = config.getint('SIM_data_generation', 'image_size')
     train_net_parameters['opt_over'] = config.get('net', 'opt_over')
-
+    train_net_parameters['NumPhase'] = config.getint('SIM_data_generation', 'NumPhase')
     train_net_parameters['data_directory_file'] = config.get('image_file', 'SourceFileDirectory')
 
 

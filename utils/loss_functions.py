@@ -90,7 +90,7 @@ class MSE_loss_2(nn.Module):
             pattern_gt_nomalized = pattern_gt / mean_pattern_gt
 
         if deconv == True:
-            loss = torch.mean(torch.pow((pattern_nomalized - pattern_gt_nomalized) * mask * (OTF / (OTF * OTF + 0.04)).unsqueeze(2), 2))
+            loss = torch.mean(torch.pow((pattern_nomalized - pattern_gt_nomalized) * mask .unsqueeze(2), 2))
         else:
             loss = torch.mean(torch.pow((pattern_nomalized - pattern_gt_nomalized) * mask, 2))
         return loss * num_of_channels
@@ -121,16 +121,16 @@ def tv_loss_calculate(x, beta=1):
         beta: See https://arxiv.org/abs/1412.0035 (fig. 2) to see effect of `beta`
     '''
     if x.dim() == 4:
-        pass
+        x = x.squeeze()
     elif x.dim() == 2:
-        x = x.unsqueeze(0).unsqueeze(0)
+        pass
     else:
         raise Exception('dim of inputted x must be 2 or 4')
 
-    dh = torch.pow(x[:, :, :, 1:] - x[:, :, :, :-1], 2)
-    dw = torch.pow(x[:, :, 1:, :] - x[:, :, :-1, :], 2)
+    dh = torch.pow(x[:, 1:] - x[:, :-1], 2)
+    dw = torch.pow(x[1:, :] - x[:-1, :], 2)
 
-    return torch.sum(torch.pow(dh[:, :, :-1 ,:] + dw[:, :, :, :-1], beta))
+    return torch.sum(torch.pow(dh[:-1, :] + dw[:, :-1], beta))
 
 def minus_loss_calculate(x):
     minus_x = torch.mean(abs(x) - x)

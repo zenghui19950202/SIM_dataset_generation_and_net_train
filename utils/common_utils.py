@@ -9,7 +9,7 @@ import PIL
 import numpy as np
 from torchvision import transforms
 import os
-
+import pandas as pd
 import matplotlib.pyplot as plt
 
 
@@ -344,7 +344,7 @@ def input_data_pick(image, input_num):
         # picked_image = pick_input_data(image, [0, 1, 2, 3, 6, 4])
         picked_image = pick_input_data(image, [0, 1, 3, 4, 6, 7])
     elif input_num == 7:
-        picked_image = pick_input_data(image, [0, 1, 2, 3, 6, 4, 7])
+        picked_image = pick_input_data(image, [0, 1, 2, 3, 4, 6, 7])
     elif input_num == 8:
         picked_image = pick_input_data(image, [0, 1, 2, 3, 6, 4, 7, 5])
     elif input_num == 9:
@@ -359,6 +359,70 @@ def input_data_pick(image, input_num):
         picked_image = pick_input_data(image, [0, 1])
 
     return picked_image
+
+def shuffle_image(image, shuffle_count):
+    if shuffle_count == 0:
+        # picked_image = pick_input_data(image, [0, 1, 2, 3, 6])
+        picked_image = pick_input_data(image, [0, 1, 2, 3, 4, 5, 6, 7, 8])
+    elif shuffle_count == 1:
+        picked_image = pick_input_data(image, [3, 4, 5, 6, 7, 8, 0, 1, 2])
+    elif shuffle_count == 2:
+        picked_image = pick_input_data(image, [6, 7, 8, 0, 1, 2, 3, 4, 5])
+
+    return picked_image
+
+def save_loss_list_to_csv(loss_list, epoch, save_directory):
+    """
+    save the loss list to .csv file
+    :param loss_list: /list
+    :param epoch: iterative epoch /int
+    :param epoch:  save directory /str
+    :return: None
+    """
+    'Save the loss list '
+    epoch_list = [x for x in range(1,epoch+2,1)]
+    dataframe = pd.DataFrame({'loss': loss_list, 'epoch': epoch_list})
+    # print(dataframe)
+    # 将DataFrame存储为csv,index表示是否显示行名，default=True
+    dataframe.to_csv(save_directory, sep=',')
+
+    return None
+
+def read_loss_list_csv(loss_list_directory):
+    """
+    read csv file of iterative loss
+    :param loss_list_directory: /str
+    :return:
+    #存在的问题是：上面的save_loss_list_to_csv函数无法正常保存
+    """
+    f = open(loss_list_directory,encoding = 'UTF-8')
+    data=pd.read_csv(f) #将csv文件读入并转化为dataframe形式
+    print(data)
+    loss = data['loss'].values
+    epoch = data['epoch'].values
+
+    plt.rc('grid',linestyle=':',color='green')
+    plt.plot(epoch,loss,c='red')
+    plt.show()
+
+
+def save_loss_npy(loss: np, file_name):
+    """
+    save loss into a .npy file
+    :param loss: The loss to be saved
+    :param filename: The  file saving directory
+    """
+
+    if not os.path.exists(file_name):
+        try:
+            os.makedirs(file_name)
+        except IOError:
+            print("Insufficient rights to read or write output directory (%s)"
+                  % file_name)
+
+    save_path = os.path.join(file_name, time.strftime("%Y-%m-%d %H-%M-%S", time.localtime()))
+    np.save(save_path, loss)
+
 
 
 if __name__ == '__main__':

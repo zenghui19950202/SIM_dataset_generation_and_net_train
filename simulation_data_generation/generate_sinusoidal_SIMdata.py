@@ -16,6 +16,7 @@ if __name__ == '__main__':
     sample_num_valid = config.getint('SIM_data_generation', 'sample_num_valid')
     image_size = config.getint('SIM_data_generation', 'image_size')
     data_num = config.getint('SIM_data_generation', 'data_num')
+    NumPhase = config.getint('SIM_data_generation', 'NumPhase')
     # SourceFileDirectory = "D:\DataSet\DIV2K\DIV2K_valid_LR_unknown/test/test2"
 
     train_directory = SourceFileDirectory + '/train'
@@ -24,7 +25,7 @@ if __name__ == '__main__':
     p = Pipeline_speckle.Pipeline_speckle(source_directory=train_directory, output_directory="../SIMdata_SR_train")
     p.add_operation(Crop(probability=1, width=image_size, height=image_size, centre=False))
     p.add_operation(SinusoidalPattern(probability=1))
-    p.sample(sample_num_train, multi_threaded=False, data_type='train', data_num=data_num)
+    p.sample(1, multi_threaded=False, data_type='train', data_num=NumPhase * 3)
 
     # p = Pipeline_speckle.Pipeline_speckle(source_directory=valid_directory, output_directory="../SIMdata_SR_valid")
     # p.add_operation(Crop(probability=1, width=image_size, height=image_size, centre=False))
